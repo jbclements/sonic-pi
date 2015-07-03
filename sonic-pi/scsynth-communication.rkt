@@ -9,6 +9,9 @@
          racket/async-channel
          osc)
 
+(provide send-command
+         incoming-messages)
+
 (define-runtime-path here ".")
 
 #;(define setup-messages (file->value (build-path here "preloads.rktd")))
@@ -87,24 +90,6 @@
           other)])
 
 
-#;(
-(for ([msg setup-messages])
-  (send-command msg))
-
-
-;; start the sine wave:
-(send-command (first action-messages))
-
-;; wait, so that the printf winds up below all of the other printout:
-(sleep 0.5)
-(printf "hit return to stop.\n")
-(read-line)
-
-(for ([msg (rest action-messages)])
-  (send-command msg))
-
-;; sleep so that we can receive the rest of the response messages
-(sleep 0.5))
 
 
 
