@@ -13,6 +13,8 @@
 
 ;; sonic pi uses ADSR from the get-go.
 
+;; create a synth for every note?
+
 ;; a uscore is a representation of a user's program
 ;; a uscore is a list of uevents
 
