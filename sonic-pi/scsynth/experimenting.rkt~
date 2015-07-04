@@ -3,8 +3,6 @@
 (require "scsynth-communication.rkt"
          osc)
 
-(send-command #"/OSCdump" (list 1))
-
 (synchronized-command
  (osc-message #"/d_load" (list #"boozle")))
 

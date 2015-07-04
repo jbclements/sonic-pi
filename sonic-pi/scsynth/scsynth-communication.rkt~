@@ -12,17 +12,19 @@
          synchronized-command
          incoming-messages)
 
+(define-runtime-path here ".")
+
 (define-logger scsynth)
 
-;; don't test this file...
-(module test racket/base)
+#;(define setup-messages (file->value (build-path here "preloads.rktd")))
+#;(define action-messages (file->value (build-path here "actions.rktd")))
 
-(define SCSYNTH-SOCKET 57118)
-(define RECEIVE-SOCKET 57119)
+(define scsynth-socket 57118)
+(define receive-socket 57119)
 
 (define the-socket (udp-open-socket))
 
-(udp-bind! the-socket "127.0.0.1" RECEIVE-SOCKET)
+(udp-bind! the-socket "127.0.0.1" receive-socket)
 
 ;; this assumes you've already started scsynth, like this:
 ;"scsynth -u 57118"
@@ -78,9 +80,9 @@
     [(? osc-message? msg)
      (async-channel-put incoming-messages msg)]))
 
-(define (send-command address . args)
-  (udp-send-to the-socket "127.0.0.1" SCSYNTH-SOCKET
-               (osc-element->bytes (osc-message address args))))
+(define (send-command message)
+  (udp-send-to the-socket "127.0.0.1" scsynth-socket 
+               (osc-element->bytes message)))
 
 ;; how long to wait for a response from the server
 (define SERVER-TIMEOUT 3.0)
@@ -115,21 +117,21 @@
 ;; might take time... but not too much.
 (define (synchronize)
   (define sync-id (fresh-sync-id))
-  (send-command #"/sync" sync-id)
+  (send-command (osc-message #"/sync" (list sync-id)))
   (discard-til-match (lambda (msg)
                        (and (equal? (osc-message-address msg) #"/synced")
                             (equal? (osc-message-args msg) (list sync-id))))))
 
 ;; use /sync to discard all waiting messages, then make the
 ;; call and wait for an incoming one.
-(define (synchronized-command address . args)
+(define (synchronized-command message)
   (synchronize)
-  (apply send-command address args)
+  (send-command message)
   (wait-for-message))
 
 
 ;; check for liveness
-(match (synchronized-command #"/status")
+(match (synchronized-command (osc-message #"/status" empty))
   [(struct osc-message (#"/status.reply" vals))
    (printf "yay, got status reply with values: ~a\n"
            vals)]
