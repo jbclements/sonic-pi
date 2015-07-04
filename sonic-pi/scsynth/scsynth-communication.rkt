@@ -3,16 +3,18 @@
 ;; Copyright 2015 John Clements (clements@racket-lang.org)
 ;; released under Mozilla Public License 2.0
 
-
 (require racket/udp
          racket/runtime-path
          racket/async-channel
          osc)
 
 (provide send-command
+         synchronized-command
          incoming-messages)
 
 (define-runtime-path here ".")
+
+(define-logger scsynth)
 
 #;(define setup-messages (file->value (build-path here "preloads.rktd")))
 #;(define action-messages (file->value (build-path here "actions.rktd")))
@@ -62,25 +64,74 @@
      #;(printf "received buffer: ~v\n" received)
      (define decoded (bytes->osc-element received))
      #;(printf "decoded: ~e\n" decoded)
-     (async-channel-put incoming-messages decoded)
+     (flatten-for-queue decoded)
      (loop))))
+
+;; in principle, scsynth could return a *bundle* of
+;; messages. I don't think it ever does this, but
+;; it's not too hard to accommodate. We will log
+;; a warning and ignore
+;; the timestamp, though....
+(define (flatten-for-queue element)
+  (match element
+    [(struct osc-bundle (timestamp elements))
+     (log-scsynth-warning "unexpected bundle in response from scsynth")
+     (for-each flatten-for-queue elements)]
+    [(? osc-message? msg)
+     (async-channel-put incoming-messages msg)]))
 
 (define (send-command message)
   (udp-send-to the-socket "127.0.0.1" scsynth-socket 
                (osc-element->bytes message)))
 
-;; check for status message
-;; initially, assume that this is the first message. Will this be true?
-;; not sure.
-(send-command (osc-message #"/status" empty))
-
 ;; how long to wait for a response from the server
 (define SERVER-TIMEOUT 3.0)
 
-(match (sync/timeout SERVER-TIMEOUT incoming-messages)
-  [#f (error 'scsynth-communication
-             "expected response to status message in ~a seconds"
-             SERVER-TIMEOUT)]
+;; get a message (but don't wait longer than SERVER-TIMEOUT
+(define (wait-for-message)
+  (match (sync/timeout SERVER-TIMEOUT incoming-messages)
+    [#f (error 'scsynth-communication
+               "expected scsynth message in < ~a seconds"
+               SERVER-TIMEOUT)]
+    [msg msg]))
+
+
+;; each sync command should use a unique # per connection
+(define SYNC-ID (box 23))
+(define (fresh-sync-id)
+  (set-box! SYNC-ID (add1 (unbox SYNC-ID)))
+  (sub1 (unbox SYNC-ID)))
+
+;; discard messages until you get one that matches the
+;; predicate. Don't wait longer than SERVER-TIMEOUT
+;; for any of them.
+(define (discard-til-match pred)
+  (define msg (wait-for-message))
+  (cond [(pred msg) 'done]
+        [else (log-scsynth-warning
+               "discarding message while waiting for a different one: ~e"
+               msg)
+              (discard-til-match pred)]))
+
+;; use /sync to discard all waiting messages and synchronize.
+;; might take time... but not too much.
+(define (synchronize)
+  (define sync-id (fresh-sync-id))
+  (send-command (osc-message #"/sync" (list sync-id)))
+  (discard-til-match (lambda (msg)
+                       (and (equal? (osc-message-address msg) #"/synced")
+                            (equal? (osc-message-args msg) (list sync-id))))))
+
+;; use /sync to discard all waiting messages, then make the
+;; call and wait for an incoming one.
+(define (synchronized-command message)
+  (synchronize)
+  (send-command message)
+  (wait-for-message))
+
+
+;; check for liveness
+(match (synchronized-command (osc-message #"/status" empty))
   [(struct osc-message (#"/status.reply" vals))
    (printf "yay, got status reply with values: ~a\n"
            vals)]
@@ -88,10 +139,3 @@
    (error 'scsynth-communication
           "received message other than status.reply: ~a"
           other)])
-
-
-
-
-
-
-
