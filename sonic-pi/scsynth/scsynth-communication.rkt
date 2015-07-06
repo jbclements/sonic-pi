@@ -9,9 +9,9 @@
          osc)
 
 (provide send-command
-         send-command/msg
+         send-command/elt
          synchronized-command
-         synchronized-command/msg
+         synchronized-command/elt
          synchronize
          incoming-messages)
 
@@ -90,10 +90,10 @@
 ;; given an address and args, assemble a message
 ;; and send to server
 (define (send-command address . args)
-  (send-command/msg (osc-message address args)))
+  (send-command/elt (osc-message address args)))
 
-;; send a message (no wrapping)
-(define (send-command/msg msg)
+;; send an element (no wrapping)
+(define (send-command/elt msg)
   (udp-send-to the-socket "127.0.0.1" SCSYNTH-SOCKET
                (osc-element->bytes msg)))
 
@@ -139,13 +139,13 @@
 ;; call and wait for an incoming one. Combines address and
 ;; args into a single message
 (define (synchronized-command address . args)
-  (synchronized-command/msg (osc-message address args)))
+  (synchronized-command/elt (osc-message address args)))
 
 ;; use /sync to discard all waiting messages, then make the
 ;; call and wait for an incoming one.
-(define (synchronized-command/msg msg)
+(define (synchronized-command/elt msg)
   (synchronize)
-  (send-command/msg msg)
+  (send-command/elt msg)
   (wait-for-message))
 
 
