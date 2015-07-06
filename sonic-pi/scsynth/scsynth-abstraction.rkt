@@ -1,10 +1,25 @@
 #lang racket
 
+;; this file provides a simpler interface to scysnth. This file started life
+;; as a simple packet capture, watching to see how (the real) sonic PI
+;; interacted with scsynth. At this point, it's still doing lots of things
+;; that don't make any sense for this project, e.g. creating a 'recording'
+;; and an 'fx' group, even though there aren't any recording or FX mechanisms.
+
 (require "scsynth-communication.rkt"
          osc)
 
-;; this file is built upon packet capture, watching Sonic PI interact
-;; with scsynth...
+(provide (contract-out
+          [start-job (-> (list/c ID? ID?))]
+          [play-note (-> ID? note-num? inexact-real? void?)]
+          [end-job (-> ID? ID? void?)]
+          [synchronize (-> (symbols 'done))]))
+
+(define ID? exact-nonnegative-integer?)
+(define note-num? (lambda (x) (and (real? x) (< 0 x))))
+
+;; don't test this file:
+(module test racket/base)
 
 ;; experimentation suggests that scsynth doesn't ever handle 64-bit ints.
 ;; here's the error message on trying to create a node with id 2^39:
@@ -22,12 +37,6 @@
          (sub1 (unbox node-id))]
         [else (error 'node-id "current node id too large: ~v\n" (unbox node-id))]))
 
-;; scsynth constants
-(define INSERT-AT-HEAD 0)
-(define INSERT-AT-TAIL 1)
-(define INSERT-BEFORE-NODE 2)
-(define INSERT-AFTER-NODE 3)
-(define REPLACE-NODE 4)
 
 ;; create a new group in the specified location.
 ;; return the new ID
@@ -75,10 +84,10 @@
                  [else (milliseconds->osc-date time)])
                (list (osc-message address args)))))
 
-;; play a note by adding a synth to the (job?) synth group
-(define (play-note job-synth-group note-num)
+;; play the given note-num at the given time (inexact milliseconds) by adding a synth to the (job?) synth group
+(define (play-note job-synth-group note-num time)
   (send-bundled-message
-   'now #;(+ 1000 (current-inexact-milliseconds))
+   time
    #"/s_new"
    #"sonic-pi-beep"
    (fresh-node-id!)
@@ -127,6 +136,7 @@
    12.0))
 
 
+;; clear the server and create the groups & mixer that we'll need:
 (send-command #"/clearSched")
 (send-command #"/g_freeAll" 0)
 (send-command #"/notify" 1)

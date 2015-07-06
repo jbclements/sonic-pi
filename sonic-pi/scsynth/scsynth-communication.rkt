@@ -3,6 +3,9 @@
 ;; Copyright 2015 John Clements (clements@racket-lang.org)
 ;; released under Mozilla Public License 2.0
 
+;; this file contains scsynth FFI. You can't use this unless you know what
+;; the scsynth commands mean.
+
 (require racket/udp
          racket/runtime-path
          racket/async-channel

@@ -1,8 +1,9 @@
 #lang racket
 
 (require
-  "sonic-pi/startup.rkt"
-  (for-syntax syntax/parse))
+  "scsynth/scsynth-abstraction.rkt"
+  (for-syntax syntax/parse)
+  rackunit)
 
 ;; all kinds of interesting interface questions here. Implicit sequence
 ;; wrapped around the whole thing? Implicit parallelism for loops next to
@@ -19,7 +20,57 @@
 ;; a uscore is a representation of a user's program
 ;; a uscore is a list of uevents
 
-#;((match-define (list job-synth-group job-mixer) (start-job))
+;; a score is (listof (list/c time-in-msec synth-note))
+
+
+(define (queue-event job-synth-group evt)
+  (play-note job-synth-group (synth-note-note (second evt)) (first evt)))
+
+(define (queue-events job-synth-group score)
+  (for ([e (in-list score)])
+    (queue-event job-synth-group e)))
+
+(define MSEC-PER-SEC 1000)
+
+;; convert a sequence of user events into a score, associating
+;; a time with each one. When we hit loops this will have to get
+;; lazy...
+(define (uscore->score uscore vtime)
+  (cond [(empty? uscore) empty]
+        [else (cond [(pisleep? (first uscore))
+                     (uscore->score (rest uscore)
+                                    (+ vtime (* MSEC-PER-SEC
+                                                (pisleep-duration
+                                                 (first uscore)))))]
+                    [(synth-note? (first uscore))
+                     (cons (list vtime (first uscore))
+                           (uscore->score (rest uscore)
+                                          vtime))])]))
+
+
+;; can't actually test this?
+(define START-MSEC-GAP 500)
+
+;; play a user-score
+(define (play job-synth-group uscore)
+  (queue-events job-synth-group (uscore->score uscore
+                                               (+ (current-inexact-milliseconds)
+                                                  START-MSEC-GAP))))
+
+(struct pisleep (duration) #:prefab)
+(struct synth-note (name note release) #:prefab)
+
+(define (psleep t)
+  (pisleep t))
+
+
+(define (synth name #:note [note 60]
+               #:release [release 1])
+  (synth-note name note release))
+
+(match-define (list job-synth-group job-mixer) (start-job))
+(time (synchronize))
+#;(
 (time (synchronize))
 (time (synchronize))
 (play-note job-synth-group 60)
@@ -31,40 +82,25 @@
 (end-job job-synth-group job-mixer)
 )
 
-(define (queue-events score)
-  (printf "not actually queueing events: ~v\n"
-          score))
-
-(define (uscore->score uscore vtime)
-  (cond [(empty? uscore) empty]
-        [else (cond [(pisleep? (first uscore))
-                     (uscore->score (rest uscore)
-                                    (+ vtime (pisleep-duration
-                                              (first uscore))))]
-                    [(synth-note? (first uscore))
-                     (cons (list vtime (first uscore))
-                           (uscore->score (rest uscore)
-                                          vtime))])]))
-
-(define (play uscore)
-  (queue-events (uscore->score uscore 0)))
-
-(define (psleep t)
-  (pisleep t))
-
-(struct pisleep (duration) #:prefab)
-;; will we be re-using instruments?
-(struct synth-note (name note release) #:prefab)
-
-(define (synth name #:note [note 60]
-               #:release [release 1])
-  (synth-note name note release))
-
 (define-syntax (go stx)
   (syntax-parse stx
-    [(_ e:expr ...) #'(play (list e ...))]))
+    [(_ e:expr ...) #'(play job-synth-group (list e ...))]))
 
 (go
  (synth 'beep #:note 60)
  (psleep 4)
  (synth 'beep #:note 66))
+
+(sleep 10)
+(printf "ending job...")
+(end-job job-synth-group job-mixer)
+
+(check-equal? (uscore->score
+               (list (synth 'beep #:note 60)
+                     (psleep 4)
+                     (synth 'beep #:note 66)
+                     (synth 'beep #:note 69))
+               2000)
+              (list (list 2000 (synth 'beep #:note 60))
+                    (list 6000 (synth 'beep #:note 66))
+                    (list 6000 (synth 'beep #:note 69))))
