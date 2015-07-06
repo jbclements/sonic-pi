@@ -11,12 +11,20 @@
 
 (provide (contract-out
           [start-job (-> (list/c ID? ID?))]
-          [play-note (-> ID? note-num? inexact-real? void?)]
+          [play-note (-> ID? note? inexact-real? void?)]
           [end-job (-> ID? ID? void?)]
-          [synchronize (-> (symbols 'done))]))
+          [synchronize (-> (symbols 'done))]
+          [struct note ([name bytes?]
+                        [note-num note-num?]
+                        [amplitude nonnegative-real?]
+                        [release nonnegative-real?])]))
+
 
 (define ID? exact-nonnegative-integer?)
-(define note-num? (lambda (x) (and (real? x) (< 0 x))))
+(define (nonnegative-real? x) (and (real? x) (<= 0 x)))
+(define (note-num? x) (and (real? x) (< 0 x)))
+
+(struct note (name note-num amplitude release) #:transparent)
 
 ;; don't test this file:
 (module test racket/base)
@@ -28,6 +36,7 @@
 ;; (I also get the sense that scsynth should be printing the timestamp as an unsigned int...)
 
 (send-command #"/dumpOSC" 1)
+(synchronize)
 
 ;; each node must have a unique ID. Worrying about overflow is probably silly....
 (define node-id (box 2))
@@ -85,16 +94,16 @@
                (list (osc-message address args)))))
 
 ;; play the given note-num at the given time (inexact milliseconds) by adding a synth to the (job?) synth group
-(define (play-note job-synth-group note-num time)
+(define (play-note job-synth-group note time)
   (send-bundled-message
    time
    #"/s_new"
-   #"sonic-pi-beep"
+   (note-name note)
    (fresh-node-id!)
    0
    job-synth-group
    #"note"
-   note-num
+   (note-note-num note)
    #"note_slide"
    0
    #"note_slide_shape"
@@ -102,7 +111,7 @@
    #"note_slide_curve"
    0
    #"amp"
-   1
+   (note-amplitude note)
    #"amp_slide"
    0
    #"amp_slide_shape"
@@ -124,7 +133,7 @@
    #"sustain"
    0
    #"release"
-   1
+   (note-release note)
    #"attack_level"
    1
    #"sustain_level"
@@ -142,6 +151,7 @@
 (send-command #"/notify" 1)
 (send-command #"/d_loadDir"
               #"/Applications/Sonic Pi.app/etc/synthdefs")
+(synchronize)
 (define mixer-group (new-group 'head ROOT-GROUP))
 (define fx-group (new-group 'before mixer-group))
 (define synth-group (new-group 'before fx-group))
