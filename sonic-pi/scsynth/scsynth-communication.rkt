@@ -9,7 +9,10 @@
          osc)
 
 (provide send-command
+         send-command/msg
          synchronized-command
+         synchronized-command/msg
+         synchronize
          incoming-messages)
 
 (define-logger scsynth)
@@ -26,6 +29,12 @@
 
 ;; this assumes you've already started scsynth, like this:
 ;"scsynth -u 57118"
+;; from sonic pi.  Maybe need -m argument for real-time memory setting? and -a argument
+;; for number of audio buses?
+;; sys("'#{scsynth_path}' -a 1024 -u #{@port} -m 131072 -D 0 &")
+;; ouch, there's other stuff that's somehow necessary, hiding in relative paths?
+;; this one works:
+;; /Applications/Sonic\ Pi.app/app/server/native/osx/scsynth -a 1024 -u 57118 -m 131072 -D 0
 
 ;; apparently, you just can't have datagrams longer than 64K bytes
 (define receive-buffer (make-bytes 65535 0))
@@ -78,9 +87,15 @@
     [(? osc-message? msg)
      (async-channel-put incoming-messages msg)]))
 
+;; given an address and args, assemble a message
+;; and send to server
 (define (send-command address . args)
+  (send-command/msg (osc-message address args)))
+
+;; send a message (no wrapping)
+(define (send-command/msg msg)
   (udp-send-to the-socket "127.0.0.1" SCSYNTH-SOCKET
-               (osc-element->bytes (osc-message address args))))
+               (osc-element->bytes msg)))
 
 ;; how long to wait for a response from the server
 (define SERVER-TIMEOUT 3.0)
@@ -121,10 +136,16 @@
                             (equal? (osc-message-args msg) (list sync-id))))))
 
 ;; use /sync to discard all waiting messages, then make the
-;; call and wait for an incoming one.
+;; call and wait for an incoming one. Combines address and
+;; args into a single message
 (define (synchronized-command address . args)
+  (synchronized-command/msg (osc-message address args)))
+
+;; use /sync to discard all waiting messages, then make the
+;; call and wait for an incoming one.
+(define (synchronized-command/msg msg)
   (synchronize)
-  (apply send-command address args)
+  (send-command/msg msg)
   (wait-for-message))
 
 
