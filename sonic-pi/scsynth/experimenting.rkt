@@ -14,47 +14,7 @@
 
 (send-command #"/dumpOSC" 1)
 
-(define setup-cmds
-  '(#s(osc-message #"/clearSched" ())
-    #s(osc-message #"/g_freeAll" (0))
-    #s(osc-message #"/notify" (1))
-    #s(osc-message
-       #"/d_loadDir"
-       (#"/Applications/Sonic Pi.app/etc/synthdefs"))
-    ))
-
-;; consult sonic-pi src to see what all these groups are for...
-'(0 (cons (4 ; synth_group
-           (7 (cons
-               ;; new "synth" created for each note, apparently.
-               (9 (sonic-pi-beep #:note 60
-                                 #:note-slide 0
-                                 ...
-                                 ;; inexact number?
-                                 ;; TODO: ask about this?
-                                 #:out_bus 12.0
-                                 ))
-               empty)))
-          (cons (3 ; fx_group
-                 empty)
-                (cons (2 ;mixer_group
-                       (cons
-                        (8 (sonic-pi-basic_mixer #:amp 1
-                                                 #:amp_slide 0.1000
-                                                 ...
-                                                 #:in_bus 12
-                                                 ;; another amp?
-                                                 #:amp 0.300
-                                                 #:out_bus 10
-                                                 ))
-                        (cons (6 (mixer #:in-bus 10
-                                        #:invert_stereo 0.0
-                                        #:force-mono 0.0)) empty)))
-                      (cons (5 ; recording_group
-                             empty) empty)))))
-
 ;; each node must have a unique ID. Worrying about overflow is probably silly....
-
 (define node-id (box 2))
 (define (fresh-node-id!)
   (cond [(int32? (unbox node-id))
@@ -107,88 +67,18 @@
 ;; this one already exists:
 (define ROOT-GROUP 0)
 
-
-(define (create-groups-and-mixers-cmds)
-  (send-command #"/sync" 1)
-  (send-command #"/clearSched")
-  (send-command #"/g_freeAll" 0)
-  (define mixer-group (new-group 'head ROOT-GROUP))
-  (define fx-group (new-group 'before mixer-group))
-  (define synth-group (new-group 'before fx-group))
-  (define recording-group (new-group 'after mixer-group))
-  (define mixer (new-synth #"sonic-pi-mixer" 'head mixer-group
-                           #"in_bus" 10))
-  (send-command/elt `#s(osc-message #"/n_set" (,mixer #"invert_stereo" 0.0)))
-  (send-command/elt `#s(osc-message #"/n_set" (,mixer #"force_mono" 0.0)))
-  (define job-synth-group (new-group 'tail synth-group))
-  (define job-mixer (new-synth #"sonic-pi-basic_mixer" 'head mixer-group
-                               #"amp"
-                               1
-                               #"amp_slide"
-                               0.10000000149011612
-                               #"amp_slide_shape"
-                               5
-                               #"amp_slide_curve"
-                               0
-                               #"in_bus"
-                               12
-                               #"amp"
-                               0.30000001192092896
-                               #"out_bus"
-                               10))
-  job-synth-group
-  #;(
-(for-each send-command/elt )
- `(#s(osc-message #"/sync" (1))
-    #s(osc-message #"/clearSched" ())
-    #s(osc-message #"/g_freeAll" (0))
-    ;; mixer group
-    #s(osc-message #"/g_new" (,MIXER-GROUP ,INSERT-AT-HEAD ,ROOT-GROUP))
-    ;; fx group
-    #s(osc-message #"/g_new" (,FX-GROUP ,INSERT-BEFORE-NODE ,MIXER-GROUP))
-    ;; synth group
-    #s(osc-message #"/g_new" (,SYNTH-GROUP ,INSERT-BEFORE-NODE ,FX-GROUP))
-    ;; recording group
-    #s(osc-message #"/g_new" (,RECORDING-GROUP ,INSERT-AFTER-NODE ,MIXER-GROUP))
-    ;; mixer goes in mixing group
-    #s(osc-message #"/s_new" (#"sonic-pi-mixer" ,MIXER ,INSERT-AT-HEAD ,MIXER-GROUP #"in_bus" 10))
-    ;; why as separate messages?
-    #s(osc-message #"/n_set" (,MIXER #"invert_stereo" 0.0))
-    #s(osc-message #"/n_set" (,MIXER #"force_mono" 0.0))
-    ;; new_synth_group
-    #s(osc-message #"/g_new" (,JOB-SYNTH-GROUP ,INSERT-AT-TAIL ,SYNTH-GROUP))
-    ;; looks like this might be a "job mixer"...
-    #s(osc-message
-       #"/s_new"
-       (#"sonic-pi-basic_mixer"
-        8
-        ,INSERT-AT-HEAD
-        ,MIXER-GROUP
-        #"amp"
-        1
-        #"amp_slide"
-        0.10000000149011612
-        #"amp_slide_shape"
-        5
-        #"amp_slide_curve"
-        0
-        #"in_bus"
-        12
-        #"amp"
-        0.30000001192092896
-        #"out_bus"
-        10)))))
-
-#;(define (new-synth-message))
-
+;; send a single message inside of a bundle with a timestamp
 (define (send-bundled-message time address . args)
   (send-command/elt
-   (osc-bundle (milliseconds->osc-date time)
+   (osc-bundle (match time
+                 ['now 'now]
+                 [else (milliseconds->osc-date time)])
                (list (osc-message address args)))))
 
-(define (play-note note-num)
+;; play a note by adding a synth to the (job?) synth group
+(define (play-note job-synth-group note-num)
   (send-bundled-message
-   (+ 1000 (current-inexact-milliseconds))
+   'now #;(+ 1000 (current-inexact-milliseconds))
    #"/s_new"
    #"sonic-pi-beep"
    (fresh-node-id!)
@@ -237,31 +127,52 @@
    12.0))
 
 
-(for-each send-command/elt setup-cmds)
+(send-command #"/clearSched")
+(send-command #"/g_freeAll" 0)
+(send-command #"/notify" 1)
+(send-command #"/d_loadDir"
+              #"/Applications/Sonic Pi.app/etc/synthdefs")
+(define mixer-group (new-group 'head ROOT-GROUP))
+(define fx-group (new-group 'before mixer-group))
+(define synth-group (new-group 'before fx-group))
+(define recording-group (new-group 'after mixer-group))
+(define mixer (new-synth #"sonic-pi-mixer" 'head mixer-group
+                         #"in_bus" 10))
+(send-command/elt `#s(osc-message #"/n_set" (,mixer #"invert_stereo" 0.0)))
+(send-command/elt `#s(osc-message #"/n_set" (,mixer #"force_mono" 0.0)))
+
+
+
+;; start a job. I don't even know what a job is!
+(define (start-job)
+  (define job-synth-group (new-group 'tail synth-group))
+  (define job-mixer (new-synth #"sonic-pi-basic_mixer" 'head mixer-group
+                               #"amp"
+                               1
+                               #"amp_slide"
+                               0.10000000149011612
+                               #"amp_slide_shape"
+                               5
+                               #"amp_slide_curve"
+                               0
+                               #"in_bus"
+                               12
+                               #"amp"
+                               0.30000001192092896
+                               #"out_bus"
+                               10))
+  (list job-synth-group job-mixer))
+
+;; end a job.
+(define (end-job job-synth-group job-mixer)
+  (send-command #"/n_set" job-mixer #"amp_slide" 1.0)
+  ;; is there a delay in here?
+  (send-command #"/n_set" job-mixer #"amp" 0.0)
+  (send-command #"/n_free" job-mixer)
+  (send-command #"/n_free" job-synth-group))
+
+
 (synchronize)
-(define job-synth-group (create-groups-and-mixers-cmds))
-(synchronize)
-(play-note 60)
 
 
 
-'(
-  #s(osc-message #"/n_set" (8 #"amp_slide" 1.0))
-  #s(osc-message #"/n_set" (8 #"amp" 0.0))
-  #s(osc-message #"/n_free" (8))
-  #s(osc-message #"/n_free" (7))
-  #s(osc-message #"/quit" ()))
-
-;(synchronized-command #"/d_load" #"boozle")
-;(synchronized-command #"/d_loadDir" #"/Users/clements/sonic-pi/sonic-pi/scsynth/synthdefs")
-;(synchronized-command #"/status")
-
-;; this plays the key 
-#;((define my-note
-  (let ()
-    (define id (create-synth "sin-inst" #t))
-    (send-msg (n-set1 id "freq" freq))
-    (note id freq)))
-(sleep 1)
-;; stop playing note
-(note-off my-note))

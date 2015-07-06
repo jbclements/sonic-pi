@@ -1,7 +1,8 @@
 #lang racket
 
-(require (prefix-in r: rsc3)
-         (for-syntax syntax/parse))
+(require
+  "sonic-pi/startup.rkt"
+  (for-syntax syntax/parse))
 
 ;; all kinds of interesting interface questions here. Implicit sequence
 ;; wrapped around the whole thing? Implicit parallelism for loops next to
@@ -17,6 +18,18 @@
 
 ;; a uscore is a representation of a user's program
 ;; a uscore is a list of uevents
+
+#;((match-define (list job-synth-group job-mixer) (start-job))
+(time (synchronize))
+(time (synchronize))
+(play-note job-synth-group 60)
+(sleep 1)
+(play-note job-synth-group 61)
+(sleep 1)
+(play-note job-synth-group 62)
+(sleep 2)
+(end-job job-synth-group job-mixer)
+)
 
 (define (queue-events score)
   (printf "not actually queueing events: ~v\n"
