@@ -7,27 +7,40 @@
 ;; and an 'fx' group, even though there aren't any recording or FX mechanisms.
 
 (require "scsynth-communication.rkt"
+         "note.rkt"
+         (for-syntax syntax/parse)
          osc)
 
 (provide (contract-out
-          [start-job (-> (list/c ID? ID?))]
-          [play-note (-> ID? note? inexact-real? void?)]
-          [end-job (-> ID? ID? void?)]
-          [synchronize (-> (symbols 'done))]
-          [struct note ([name bytes?]
-                        [note-num note-num?]
-                        [amplitude nonnegative-real?]
-                        [release nonnegative-real?])]))
+          [startup (-> ctxt?)]
+          [start-job (-> ctxt? job-ctxt?)]
+          [play-note (-> job-ctxt? note? inexact-real? void?)]
+          [end-job (-> job-ctxt? void?)]
+          [rename synchronize/ctxt synchronize (-> ctxt? void?)])
+         make-note
+         note?)
 
+;; this represents the context of a running sonic pi graph, containing
+;; the 'comm' structure, the group of the mixers and the group of the
+;; synth groups
+(define-struct ctxt (comm mixer-group synth-group-group) #:transparent)
+;; this represents the context of a single job, containing a ctxt,
+;; the job-specific mixer, and the job-specific synth-group
+(define-struct job-ctxt (ctxt mixer synth-group) #:transparent)
 
+;; represents a synth or group ID
 (define ID? exact-nonnegative-integer?)
+
 (define (nonnegative-real? x) (and (real? x) (<= 0 x)))
 (define (note-num? x) (and (real? x) (< 0 x)))
-
-(struct note (name note-num amplitude release) #:transparent)
+(define (note? n) (listof (list/c bytes? any/c)))
 
 ;; don't test this file:
 (module test racket/base)
+
+;; call the lower-level synchronize on a context
+(define (synchronize/ctxt the-ctxt)
+  (synchronize (ctxt-comm the-ctxt)))
 
 ;; experimentation suggests that scsynth doesn't ever handle 64-bit ints.
 ;; here's the error message on trying to create a node with id 2^39:
@@ -35,8 +48,32 @@
 ;;    [ "/s_new", "sonic-pi-beep", !unknown tag 'h' 0x68 ! ]
 ;; (I also get the sense that scsynth should be printing the timestamp as an unsigned int...)
 
-(send-command #"/dumpOSC" 1)
-(synchronize)
+(define (startup)
+  (define the-comm (comm-open))
+  (send-command the-comm #"/dumpOSC" 1)
+  (synchronize the-comm)
+  ;; clear the server and create the groups & mixer that we'll need:
+  (send-command the-comm #"/clearSched")
+  (send-command the-comm #"/g_freeAll" 0)
+  (send-command the-comm #"/notify" 1)
+  (send-command the-comm #"/d_loadDir"
+                #"/Applications/Sonic Pi.app/etc/synthdefs")
+  (synchronize the-comm)
+  ;; I don't think the current architecture is properly
+  ;; guaranteeing that things get freed; specifically,
+  ;; things in these groups might not be freed by the g_freeAll
+  ;; above. Curiously, scsynth's deepFree doesn't free nested groups.
+  (define mixer-group (new-group the-comm 'head ROOT-GROUP))
+  (define fx-group (new-group the-comm 'before mixer-group))
+  (define synth-group-group (new-group the-comm 'before fx-group))
+  (define recording-group (new-group the-comm 'after mixer-group))
+  (define mixer (new-synth the-comm #"sonic-pi-mixer" 'head mixer-group
+                           #"in_bus" 10))
+  (send-command/elt the-comm `#s(osc-message #"/n_set" (,mixer #"invert_stereo" 0.0)))
+  (send-command/elt the-comm `#s(osc-message #"/n_set" (,mixer #"force_mono" 0.0)))
+  (synchronize the-comm)
+  (ctxt the-comm mixer-group synth-group-group))
+
 
 ;; each node must have a unique ID. Worrying about overflow is probably silly....
 (define node-id (box 2))
@@ -46,22 +83,22 @@
          (sub1 (unbox node-id))]
         [else (error 'node-id "current node id too large: ~v\n" (unbox node-id))]))
 
-
 ;; create a new group in the specified location.
 ;; return the new ID
-(define (new-group placement-command relative-to)
+(define (new-group comm placement-command relative-to)
   (define new-node-id (fresh-node-id!))
   (define command-num
     (placement-command->number placement-command))
-  (send-command #"/g_new" new-node-id command-num relative-to)
+  (send-command comm #"/g_new" new-node-id command-num relative-to)
   new-node-id)
 
 ;; create a new synth node, using the given name, placement-command,
 ;; relative-to, and arguments.
-(define (new-synth synthdef-name placement-command relative-to . args)
+(define (new-synth comm synthdef-name placement-command relative-to . args)
   (define new-node-id (fresh-node-id!))
   (define command-num (placement-command->number placement-command))
   (send-command/elt
+   comm
    (osc-message
     #"/s_new"
     (append
@@ -86,87 +123,34 @@
 (define ROOT-GROUP 0)
 
 ;; send a single message inside of a bundle with a timestamp
-(define (send-bundled-message time address . args)
+(define (send-bundled-message comm time address . args)
   (send-command/elt
+   comm
    (osc-bundle (match time
                  ['now 'now]
                  [else (milliseconds->osc-date time)])
                (list (osc-message address args)))))
 
 ;; play the given note-num at the given time (inexact milliseconds) by adding a synth to the (job?) synth group
-(define (play-note job-synth-group note time)
-  (send-bundled-message
+(define (play-note job-ctxt note time)
+  (apply
+   send-bundled-message
+   (ctxt-comm (job-ctxt-ctxt job-ctxt))
    time
    #"/s_new"
-   (note-name note)
+   (bytes-append #"sonic-pi-" (first note))
    (fresh-node-id!)
    0
-   job-synth-group
-   #"note"
-   (note-note-num note)
-   #"note_slide"
-   0
-   #"note_slide_shape"
-   5
-   #"note_slide_curve"
-   0
-   #"amp"
-   (note-amplitude note)
-   #"amp_slide"
-   0
-   #"amp_slide_shape"
-   5
-   #"amp_slide_curve"
-   0
-   #"pan"
-   0
-   #"pan_slide"
-   0
-   #"pan_slide_shape"
-   5
-   #"pan_slide_curve"
-   0
-   #"attack"
-   0
-   #"decay"
-   0
-   #"sustain"
-   0
-   #"release"
-   (note-release note)
-   #"attack_level"
-   1
-   #"sustain_level"
-   1
-   #"env_curve"
-   2
-   #"out_bus"
-   ;; inexact number here?
-   12.0))
-
-
-;; clear the server and create the groups & mixer that we'll need:
-(send-command #"/clearSched")
-(send-command #"/g_freeAll" 0)
-(send-command #"/notify" 1)
-(send-command #"/d_loadDir"
-              #"/Applications/Sonic Pi.app/etc/synthdefs")
-(synchronize)
-(define mixer-group (new-group 'head ROOT-GROUP))
-(define fx-group (new-group 'before mixer-group))
-(define synth-group (new-group 'before fx-group))
-(define recording-group (new-group 'after mixer-group))
-(define mixer (new-synth #"sonic-pi-mixer" 'head mixer-group
-                         #"in_bus" 10))
-(send-command/elt `#s(osc-message #"/n_set" (,mixer #"invert_stereo" 0.0)))
-(send-command/elt `#s(osc-message #"/n_set" (,mixer #"force_mono" 0.0)))
-
-
+   (job-ctxt-synth-group job-ctxt)
+   (apply append (rest note))))
 
 ;; start a job. I don't even know what a job is!
-(define (start-job)
-  (define job-synth-group (new-group 'tail synth-group))
-  (define job-mixer (new-synth #"sonic-pi-basic_mixer" 'head mixer-group
+(define (start-job the-ctxt)
+  (match-define (struct ctxt (comm mixer-group synth-group-group)) the-ctxt)
+  (define job-synth-group (new-group comm 'tail synth-group-group))
+  ;; see note at beginning about params here, all borrowed from Sonic PI.
+  (define job-mixer (new-synth comm
+                               #"sonic-pi-basic_mixer" 'head mixer-group
                                #"amp"
                                1
                                #"amp_slide"
@@ -181,18 +165,19 @@
                                0.30000001192092896
                                #"out_bus"
                                10))
-  (list job-synth-group job-mixer))
+  (job-ctxt the-ctxt job-mixer job-synth-group))
+
+
+
 
 ;; end a job.
-(define (end-job job-synth-group job-mixer)
-  (send-command #"/n_set" job-mixer #"amp_slide" 1.0)
-  ;; is there a delay in here?
-  (send-command #"/n_set" job-mixer #"amp" 0.0)
-  (send-command #"/n_free" job-mixer)
-  (send-command #"/n_free" job-synth-group))
-
-
-(synchronize)
-
+(define (end-job the-job-ctxt)
+  (match-define (struct job-ctxt ((struct ctxt (comm _1 _2)) job-mixer job-synth-group))
+    the-job-ctxt)
+  (send-command comm #"/n_set" job-mixer #"amp_slide" 1.0)
+  (send-command comm #"/n_set" job-mixer #"amp" 0.0)
+  (sleep 1)
+  (send-command comm #"/n_free" job-mixer)
+  (send-command comm #"/n_free" job-synth-group))
 
 

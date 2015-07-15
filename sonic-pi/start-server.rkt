@@ -22,14 +22,13 @@
 
 ;; a score is (listof (list/c time-in-msec synth-note))
 
-(define ctxt (startup))
 
-(define (queue-event job-ctxt evt)
-  (play-note job-ctxt (second evt) (first evt)))
+(define (queue-event job-synth-group evt)
+  (play-note job-synth-group (second evt) (first evt)))
 
-(define (queue-events job-ctxt score)
+(define (queue-events job-synth-group score)
   (for ([e (in-list score)])
-    (queue-event job-ctxt e)))
+    (queue-event job-synth-group e)))
 
 (define MSEC-PER-SEC 1000)
 
@@ -53,8 +52,8 @@
 (define START-MSEC-GAP 500)
 
 ;; play a user-score
-(define (play job-ctxt uscore)
-  (queue-events job-ctxt (uscore->score uscore
+(define (play job-synth-group uscore)
+  (queue-events job-synth-group (uscore->score uscore
                                                (+ (current-inexact-milliseconds)
                                                   START-MSEC-GAP))))
 
@@ -64,34 +63,35 @@
   (pisleep t))
 
 
-(define job-ctxt (start-job ctxt))
-
 (define synth make-note)
 
-(time (synchronize ctxt))
+(match-define (list job-synth-group job-mixer) (start-job))
+(time (synchronize))
+#;(
+(time (synchronize))
+(time (synchronize))
+(play-note job-synth-group 60)
+(sleep 1)
+(play-note job-synth-group 61)
+(sleep 1)
+(play-note job-synth-group 62)
+(sleep 2)
+(end-job job-synth-group job-mixer)
+)
 
 (define-syntax (go stx)
   (syntax-parse stx
     [(_ e:expr ...)
-     #'(#%module-begin
-        (define ctxt (startup))
-        (define job-ctxt (start-job ctxt))
-        (with-handlers
+     #'(with-handlers
            ([exn:fail? (lambda (exn)
                          (printf "ending job due to error...\n")
-                         (end-job job-ctxt)
+                         (end-job job-synth-group job-mixer)
                          (raise exn))])
-           (play job-ctxt (list e ...))
-          )
-        (printf "waiting an arbitrary and hard-coded 15 seconds...\n")
-        (sleep 15)
-        (printf "ending job...\n")
-        (end-job job-ctxt)
-        (printf "finished.\n"))]))
+           (play job-synth-group (list e ...)))]))
 
 ;; block sleep!
 
-#;(go
+(go
  (synth #"beep" #:note 60  #:release 0.5)
  (synth #"prophet" #:note 72 #:attack 4 #:release 2 #:amp 0.5)
  (psleep 0.5)
@@ -107,7 +107,9 @@
  (psleep 0.5)
  (synth #"prophet" #:note 80 #:attack 4 #:release 2 #:amp 0.5))
 
-
+(sleep 15)
+(printf "ending job...\n")
+(end-job job-synth-group job-mixer)
 
 (check-equal? (uscore->score
                (list (synth #"beep" #:note 60)

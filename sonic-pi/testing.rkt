@@ -1,0 +1,16 @@
+#lang s-exp "lsonic.rkt"
+
+(synth #"beep" #:note 60  #:release 0.5)
+(synth #"prophet" #:note 72 #:attack 4 #:release 2 #:amp 0.5)
+(sleep 0.5)
+(synth #"prophet" #:note 74 #:attack 4 #:release 2 #:amp 0.5)
+(sleep 0.5)
+(synth #"prophet" #:note 79 #:attack 4 #:release 2 #:amp 0.5)
+(sleep 0.5)
+(synth #"prophet" #:note 77 #:attack 4 #:release 2 #:amp 0.5)
+(sleep 0.5)
+(synth #"prophet" #:note 73 #:attack 4 #:release 2 #:amp 0.5)
+(sleep 0.5)
+(synth #"prophet" #:note 69 #:attack 4 #:release 2 #:amp 0.5)
+(sleep 0.5)
+(synth #"prophet" #:note 80 #:attack 4 #:release 2 #:amp 0.5)

@@ -1,5 +1,12 @@
 #lang racket
 
+(require "scsynth/scsynth-abstraction.rkt")
+
+(provide (except-out (all-from-out racket) sleep #%module-begin)
+         (rename-out [my-module-begin #%module-begin]
+                     [psleep sleep])
+         synth)
+
 (require
   "scsynth/scsynth-abstraction.rkt"
   (for-syntax syntax/parse)
@@ -21,8 +28,6 @@
 ;; a uscore is a list of uevents
 
 ;; a score is (listof (list/c time-in-msec synth-note))
-
-(define ctxt (startup))
 
 (define (queue-event job-ctxt evt)
   (play-note job-ctxt (second evt) (first evt)))
@@ -63,14 +68,9 @@
 (define (psleep t)
   (pisleep t))
 
-
-(define job-ctxt (start-job ctxt))
-
 (define synth make-note)
 
-(time (synchronize ctxt))
-
-(define-syntax (go stx)
+(define-syntax (my-module-begin stx)
   (syntax-parse stx
     [(_ e:expr ...)
      #'(#%module-begin
@@ -88,8 +88,6 @@
         (printf "ending job...\n")
         (end-job job-ctxt)
         (printf "finished.\n"))]))
-
-;; block sleep!
 
 #;(go
  (synth #"beep" #:note 60  #:release 0.5)

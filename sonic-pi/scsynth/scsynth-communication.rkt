@@ -1,4 +1,4 @@
-#lang racket
+#lang racket/base
 
 ;; Copyright 2015 John Clements (clements@racket-lang.org)
 ;; released under Mozilla Public License 2.0
@@ -6,41 +6,42 @@
 ;; this file contains scsynth FFI. You can't use this unless you know what
 ;; the scsynth commands mean.
 
-(require racket/udp
+(require racket/contract
+         racket/match
+         racket/udp
          racket/runtime-path
          racket/async-channel
          osc)
 
-(provide send-command
-         send-command/elt
-         synchronized-command
-         synchronized-command/elt
-         synchronize
-         incoming-messages)
+(provide
+ (contract-out [comm-open (-> comm?)]
+               [synchronize (-> comm? void?)]
+               [send-command/elt (-> comm? osc-element? void?)]
+               [send-command (->* (comm? bytes?) #:rest (listof osc-value?) void?)]
+               [synchronized-command/elt (-> comm? osc-element? osc-message?)]
+               [synchronized-command (->* (comm? bytes?) #:rest (listof osc-value?)
+                                          osc-message?)])
+ comm?)
+
+;; a comm structure represents information necessary to communicate
+;; with scsynth at the OSC level; a UDP socket, and an async-channel
+;; to store incoming messages.
+(define-struct comm (socket incoming) #:transparent)
 
 (define-logger scsynth)
 
-;; don't test this file...
-(module test racket/base)
-
+;; the port numbers for communication with scsynth. In principle, the
+;; second of these (receive-socket) could be dynamically assigned.
 (define SCSYNTH-SOCKET 57118)
 (define RECEIVE-SOCKET 57119)
 
-(define the-socket (udp-open-socket))
-
-(udp-bind! the-socket "127.0.0.1" RECEIVE-SOCKET)
+;; how long to wait for a response from the server, in seconds
+(define SERVER-TIMEOUT 3.0)
 
 ;; this assumes you've already started scsynth, like this:
-;"scsynth -u 57118"
-;; from sonic pi.  Maybe need -m argument for real-time memory setting? and -a argument
-;; for number of audio buses?
-;; sys("'#{scsynth_path}' -a 1024 -u #{@port} -m 131072 -D 0 &")
-;; ouch, there's other stuff that's somehow necessary, hiding in relative paths?
-;; this one works:
-;; /Applications/Sonic\ Pi.app/app/server/native/osx/scsynth -a 1024 -u 57118 -m 131072 -D 0
-
-;; apparently, you just can't have datagrams longer than 64K bytes
-(define receive-buffer (make-bytes 65535 0))
+;"scsynth -a 1024 -u 57118 -m 131072 -D 0"
+;; this comes from sonic pi, and I can't comment on the necessity for
+;; the -a, -m, or -D arguments.
 
 ;; NB: what I know about scsynth OSC messages comes from the
 ;; "Server Command Reference" HTML document that's a part of this repo.
@@ -58,53 +59,87 @@
 ;; for now, I'm going to launch a thread that just stuffs all of the
 ;; incoming messages into an async-channel.
 
-(define incoming-messages
-  (make-async-channel))
+;; also, UDP is not reliable, which I haven't yet thought about. For instance,
+;; a synchronize should... retry if it doesn't get the response? I think
+;; the idea in the audio realm is that if a particular message (note,
+;; parameter change, etc.) gets lost, it's no big deal, and life goes
+;; on, but you certainly don't want the whole server to lock up while
+;; waiting for a sync response that got dropped.
+
+;; create a 'comm' structure to allow communication with an existing scsynth
+;; server running on port SCSYNTH-SOCKET of 127.0.0.1
+(define (comm-open)
+  (define the-socket (udp-open-socket))  
+  (udp-bind! the-socket "127.0.0.1" RECEIVE-SOCKET)
+  (udp-connect! the-socket "127.0.0.1" SCSYNTH-SOCKET)
+  (define incoming-messages (make-async-channel))
+  (start-listening-thread! the-socket incoming-messages)
+  (define the-comm (comm the-socket incoming-messages))
+  ;; check for liveness, print status
+  (match (synchronized-command the-comm #"/status")
+    [(struct osc-message (#"/status.reply" vals))
+     (match vals
+       [(list _1 ugens synths groups loaded-defs avg-cpu-usage
+              peak-cpu-usage nominal-framerate actual-framerate)
+        (printf "server is running.\n")
+        (printf " unit generators: ~v\n" ugens)
+        (printf " groups: ~v\n" groups)
+        (printf " loaded synth definitions: ~v\n" loaded-defs)
+        (printf " average cpu usage: ~v\n" avg-cpu-usage)
+        (printf " peak cpu usage: ~v\n" peak-cpu-usage)
+        (printf " nominal frame rate: ~v\n" nominal-framerate)
+        (printf " actual frame rate: ~v\n" actual-framerate)])]
+    [other
+     (error 'scsynth-communication
+            "received message other than status.reply: ~a"
+            other)])
+  the-comm)
+
 
 ;; start a thread that just reads incoming messages and stores
 ;; them in a queue.
+(define (start-listening-thread! the-socket incoming-messages)
+  ;; apparently, you just can't have datagrams longer than 64K bytes
+  (define receive-buffer (make-bytes 65535 0))
+  (thread
+   (lambda ()
+     (let loop ()
+       (define-values (len hostname src-port)
+         (udp-receive! the-socket receive-buffer))
+       #;(printf "len: ~v\nhostname: ~v\nsrc-port: ~v\n" len hostname src-port)
+       (define received (subbytes receive-buffer 0 len))
+       #;(printf "received buffer: ~v\n" received)
+       (define decoded (bytes->osc-element received))
+       #;(printf "decoded: ~e\n" decoded)
+       (flatten-into-queue incoming-messages decoded)
+       (loop)))))
 
-(thread
- (lambda ()
-   (let loop ()
-     (define-values (len hostname src-port)
-       (udp-receive! the-socket receive-buffer))
-     #;(printf "len: ~v\nhostname: ~v\nsrc-port: ~v\n" len hostname src-port)
-     (define received (subbytes receive-buffer 0 len))
-     #;(printf "received buffer: ~v\n" received)
-     (define decoded (bytes->osc-element received))
-     #;(printf "decoded: ~e\n" decoded)
-     (flatten-for-queue decoded)
-     (loop))))
 
 ;; in principle, scsynth could return a *bundle* of
 ;; messages. I don't think it ever does this, but
 ;; it's not too hard to accommodate. We will log
 ;; a warning and ignore
 ;; the timestamp, though....
-(define (flatten-for-queue element)
+(define (flatten-into-queue incoming-messages element)
   (match element
     [(struct osc-bundle (timestamp elements))
      (log-scsynth-warning "unexpected bundle in response from scsynth")
-     (for-each flatten-for-queue elements)]
+     (for-each flatten-into-queue elements)]
     [(? osc-message? msg)
      (async-channel-put incoming-messages msg)]))
 
 ;; given an address and args, assemble a message
 ;; and send to server
-(define (send-command address . args)
-  (send-command/elt (osc-message address args)))
+(define (send-command ctxt address . args)
+  (send-command/elt ctxt (osc-message address args)))
 
 ;; send an element (no wrapping)
-(define (send-command/elt msg)
-  (udp-send-to the-socket "127.0.0.1" SCSYNTH-SOCKET
-               (osc-element->bytes msg)))
-
-;; how long to wait for a response from the server
-(define SERVER-TIMEOUT 3.0)
+(define (send-command/elt ctxt msg)
+  ;; NB: THIS CAN BLOCK:
+  (udp-send (comm-socket ctxt) (osc-element->bytes msg)))
 
 ;; get a message (but don't wait longer than SERVER-TIMEOUT
-(define (wait-for-message)
+(define (wait-for-message incoming-messages)
   (match (sync/timeout SERVER-TIMEOUT incoming-messages)
     [#f (error 'scsynth-communication
                "expected scsynth message in < ~a seconds"
@@ -121,43 +156,35 @@
 ;; discard messages until you get one that matches the
 ;; predicate. Don't wait longer than SERVER-TIMEOUT
 ;; for any of them.
-(define (discard-til-match pred)
-  (define msg (wait-for-message))
-  (cond [(pred msg) 'done]
+(define (discard-til-match incoming-messages pred)
+  (define msg (wait-for-message incoming-messages))
+  (cond [(pred msg) ; success!
+         (void)]
         [else (log-scsynth-warning
                "discarding message while waiting for a different one: ~e"
                msg)
-              (discard-til-match pred)]))
+              (discard-til-match incoming-messages pred)]))
 
 ;; use /sync to discard all waiting messages and synchronize.
 ;; might take time... but not too much.
-(define (synchronize)
+(define (synchronize ctxt)
   (define sync-id (fresh-sync-id))
-  (send-command #"/sync" sync-id)
-  (discard-til-match (lambda (msg)
+  (send-command ctxt #"/sync" sync-id)
+  (discard-til-match (comm-incoming ctxt)
+                     (lambda (msg)
                        (and (equal? (osc-message-address msg) #"/synced")
                             (equal? (osc-message-args msg) (list sync-id))))))
 
 ;; use /sync to discard all waiting messages, then make the
 ;; call and wait for an incoming one. Combines address and
 ;; args into a single message
-(define (synchronized-command address . args)
-  (synchronized-command/elt (osc-message address args)))
+(define (synchronized-command ctxt address . args)
+  (synchronized-command/elt ctxt (osc-message address args)))
 
 ;; use /sync to discard all waiting messages, then make the
 ;; call and wait for an incoming one.
-(define (synchronized-command/elt msg)
-  (synchronize)
-  (send-command/elt msg)
-  (wait-for-message))
+(define (synchronized-command/elt ctxt msg)
+  (synchronize ctxt)
+  (send-command/elt ctxt msg)
+  (wait-for-message (comm-incoming ctxt)))
 
-
-;; check for liveness
-(match (synchronized-command #"/status")
-  [(struct osc-message (#"/status.reply" vals))
-   (printf "yay, got status reply with values: ~a\n"
-           vals)]
-  [other
-   (error 'scsynth-communication
-          "received message other than status.reply: ~a"
-          other)])
