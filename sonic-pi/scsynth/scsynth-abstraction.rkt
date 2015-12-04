@@ -33,7 +33,7 @@
 
 (define (nonnegative-real? x) (and (real? x) (<= 0 x)))
 (define (note-num? x) (and (real? x) (< 0 x)))
-(define (note? n) (listof (list/c bytes? any/c)))
+
 
 ;; don't test this file:
 (module test racket/base)
@@ -46,8 +46,12 @@
 ;; here's the error message on trying to create a node with id 2^39:
 ;; [ "#bundle", -2791018499003203584, 
 ;;    [ "/s_new", "sonic-pi-beep", !unknown tag 'h' 0x68 ! ]
-;; (I also get the sense that scsynth should be printing the timestamp as an unsigned int...)
+;; (I also get the sense that scsynth should be printing the timestamp
+;; as an unsigned int...)
 
+;; establish communication with scsynth, kill everything that's running,
+;; and create a new graph. This architecture comes straight from Sonic
+;; Pi. If it works for them, I'm assuming it will work for us.
 (define (startup)
   (define the-comm (comm-open))
   (send-command the-comm #"/dumpOSC" 1)
@@ -69,20 +73,27 @@
   (define recording-group (new-group the-comm 'after mixer-group))
   (define mixer (new-synth the-comm #"sonic-pi-mixer" 'head mixer-group
                            #"in_bus" 10))
-  (send-command/elt the-comm `#s(osc-message #"/n_set" (,mixer #"invert_stereo" 0.0)))
-  (send-command/elt the-comm `#s(osc-message #"/n_set" (,mixer #"force_mono" 0.0)))
+  (send-command/elt the-comm `#s(osc-message #"/n_set"
+                                             (,mixer #"invert_stereo" 0.0)))
+  (send-command/elt the-comm `#s(osc-message #"/n_set"
+                                             (,mixer #"force_mono" 0.0)))
   (synchronize the-comm)
   (ctxt the-comm mixer-group synth-group-group))
 
 
-;; each node must have a unique ID. Worrying about overflow is probably silly....
-(define node-id (box 2))
-(define (fresh-node-id!)
-  (cond [(int32? (unbox node-id))
-         (set-box! node-id (add1 (unbox node-id)))
-         (sub1 (unbox node-id))]
-        [else (error 'node-id "current node id too large: ~v\n" (unbox node-id))]))
+;; create a fresh node id.
+(define fresh-node-id!
+  ;; each node must have a unique ID.
+  ;; Worrying about overflow is probably silly....
+  (let ([node-id (box 2)])
+    (λ ()
+      (cond [(int32? (unbox node-id))
+             (set-box! node-id (add1 (unbox node-id)))
+             (sub1 (unbox node-id))]
+            [else (error 'node-id "current node id too large: ~v\n"
+                         (unbox node-id))]))))
 
+;; given the comm, a placement command, and a node ID,
 ;; create a new group in the specified location.
 ;; return the new ID
 (define (new-group comm placement-command relative-to)
@@ -106,7 +117,8 @@
      args)))
   new-node-id)
 
-;; convert a placement command symbol to the corresponding number (defined in the scsynth API)
+;; convert a placement command symbol to the corresponding number
+;; (defined in the scsynth API)
 (define (placement-command->number pc)
   (match pc
     ['head 0]
@@ -131,7 +143,8 @@
                  [else (milliseconds->osc-date time)])
                (list (osc-message address args)))))
 
-;; play the given note-num at the given time (inexact milliseconds) by adding a synth to the (job?) synth group
+;; play the given note-num at the given time (inexact milliseconds) by
+;; adding a synth to the (job?) synth group
 (define (play-note job-ctxt note time)
   (apply
    send-bundled-message
@@ -167,12 +180,12 @@
                                10))
   (job-ctxt the-ctxt job-mixer job-synth-group))
 
-
-
-
-;; end a job.
+;; end a job. Code ported directly from Sonic Pi. It looks like this fades
+;; out the mixer associated with the job and then frees it and its associated
+;; synths
 (define (end-job the-job-ctxt)
-  (match-define (struct job-ctxt ((struct ctxt (comm _1 _2)) job-mixer job-synth-group))
+  (match-define (struct job-ctxt
+                  ((struct ctxt (comm _1 _2)) job-mixer job-synth-group))
     the-job-ctxt)
   (send-command comm #"/n_set" job-mixer #"amp_slide" 1.0)
   (send-command comm #"/n_set" job-mixer #"amp" 0.0)

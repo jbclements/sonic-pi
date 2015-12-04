@@ -14,3 +14,4 @@
 (synth #"prophet" #:note 69 #:attack 4 #:release 2 #:amp 0.5)
 (sleep 0.5)
 (synth #"prophet" #:note 80 #:attack 4 #:release 2 #:amp 0.5)
+(synth #"prophet" #:note 65)

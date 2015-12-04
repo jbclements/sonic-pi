@@ -1,15 +1,26 @@
-#lang racket
+#lang racket/base
+
+(require (for-syntax syntax/parse
+                     racket/base)
+         racket/contract)
 
 ;; this file is just for the DRY macro magic on notes
 
-;; a note is a byte-string association-list
+;; NB: why not a struct? I think its just that the association list
+;; made it easier to abstract over providing defaults, but that seems
+;; pretty weak... then again, this seems unlikely to become a bottleneck.
+
+;; a note is a string representing a synth name and a byte-string association-list
+;; representing the values of various fields.
 (define note? (cons/c bytes? (listof (list/c bytes? any/c))))
 
 (provide note?
          make-note)
 
-(require (for-syntax syntax/parse))
 
+
+;; we want to define a note as a struct (actually just an association list)
+;; with a bunch of default values for various fields.
 (define-syntax (note-struct-definer stx)
   (syntax-parse stx
     [(_ maker-name (req-field ...) (field-name default-value) ...)
