@@ -65,7 +65,7 @@
   (send-command the-comm #"/g_freeAll" 0)
   (send-command the-comm #"/notify" 1)
   (send-command the-comm #"/d_loadDir"
-                #"/Applications/Sonic Pi.app/etc/synthdefs")
+                #"/Applications/old-sonic-pi/Sonic Pi.app/etc/synthdefs")
   (synchronize the-comm)
   ;; I don't think the current architecture is properly
   ;; guaranteeing that things get freed; specifically,

@@ -31,6 +31,7 @@
 ;; a uevent is one of
 ;; - (pisleep ...), representing the passage of time, or
 ;; - a note, representing a note to be played at the current time
+;; - (loop list-of-uscore), representing a ... hmmm.... not sure about this.
 
 ;; a score is (stream/c event) WITH NON-DECREASING TIMES
 ;; an event is (list/c time-in-msec synth-note)
