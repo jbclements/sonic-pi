@@ -1,5 +1,9 @@
 #lang racket
 
+;; Copyright 2015 John Clements (clements@racket-lang.org)
+;; released under Mozilla Public License 2.0
+
+
 ;; this file provides a simpler interface to scysnth. This file started life
 ;; as a simple packet capture, watching to see how (the real) sonic PI
 ;; interacted with scsynth. At this point, it's still doing lots of things
@@ -194,3 +198,11 @@
   (send-command comm #"/n_free" job-synth-group))
 
 
+
+(module+ main
+
+  (define ctxt (startup))
+  (define job-ctxt (start-job ctxt))
+  (play-note job-ctxt (make-note #"beep" #:note 100)
+             (+ 500 (current-inexact-milliseconds)))
+  (end-job job-ctxt))

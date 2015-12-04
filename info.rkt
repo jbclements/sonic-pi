@@ -4,7 +4,7 @@
 
 (define deps
   (list "base"
-        "rsc3"
+        "osc"
         #;(
         "rackunit-lib"
         "scribble-lib"

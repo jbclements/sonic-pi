@@ -47,25 +47,35 @@
         [else
          ;; check for job death....
          (define e (stream-first score))
-         (define dt (current-lead e))
-         (cond [(< dt MAX-QUEUE-LEAD)
-                (queue-event job-ctxt e)
-                (queue-events (stream-rest score))]
-               [else ;; too early to play
-                (define sleep-msec
-                  ;; turns out sleep tends to oversleep...
-                  (max MIN-SLEEP-MSEC
-                       (- dt EXPECTED-MAX-SLEEP-LAG QUEUE-LEAD)))
-                (sleep (/ sleep-msec 1000))
+         (match (play-now? (current-lead e))
+           ['play
+            (queue-event job-ctxt e)
+            (queue-events job-ctxt (stream-rest score))]
+           [(list 'delay (? number? sleep-msec))
+            (sleep (/ sleep-msec MSEC-PER-SEC))
                 ;; could keep statistics here...
-                (queue-events job-ctxt score)])]))
+            (queue-events job-ctxt score)])]))
+
+;; given an event, return 'play to indicate it should be queued now
+;; or '(delay n) to indicate that the program should sleep for n milliseconds
+(define (play-now? dt)
+  (cond [(< dt MAX-QUEUE-LEAD)
+         'play]
+        [else ;; too early to play
+         (define sleep-msec
+           ;; turns out sleep tends to oversleep...
+           (max MIN-SLEEP-MSEC
+                (- dt EXPECTED-MAX-SLEEP-LAG QUEUE-LEAD)))
+         (list 'delay sleep-msec)]))
 
 
 ;; don't want to busy-wait... don't sleep less than this many msec:
 (define MIN-SLEEP-MSEC 10)
 ;; ideal lead time
 (define QUEUE-LEAD 200)
-(define EXPECTED-MAX-SLEEP-LAG 20)
+(define EXPECTED-MAX-SLEEP-LAG 80)
+
+
 
 ;; how long until the event is supposed to happen?
 (define (current-lead event)
@@ -75,13 +85,13 @@
 
 ;; lead time in milliseconds. Don't queue a note more than this
 ;; far in advance:
-(define MAX-QUEUE-LEAD 250)
+(define MAX-QUEUE-LEAD 1000)
 
 (define MSEC-PER-SEC 1000)
 
-;; DANGER: loop with only sleep can lead to spaz-out...
 ;; given a user score and a virtual time, produce a score associating
 ;; a time with each note.
+;; DANGER: loop with only sleep can lead to spaz-out...
 (define (uscore->score uscore vtime)
   (cond [(empty? uscore) empty-stream]
         [else (cond [(pisleep? (first uscore))
@@ -98,7 +108,8 @@
                                                 0 uscore vtime)])]))
 
 
-;; can't actually test this?
+;; the piece is scheduled to start this far in the future to give time
+;; to get things started.
 (define START-MSEC-GAP 500)
 
 ;; play a user-score
@@ -134,31 +145,23 @@
         (end-job job-ctxt)
         (printf "finished.\n"))]))
 
-#;(go
- (synth #"beep" #:note 60  #:release 0.5)
- (synth #"prophet" #:note 72 #:attack 4 #:release 2 #:amp 0.5)
- (psleep 0.5)
- (synth #"prophet" #:note 74 #:attack 4 #:release 2 #:amp 0.5)
- (psleep 0.5)
- (synth #"prophet" #:note 79 #:attack 4 #:release 2 #:amp 0.5)
- (psleep 0.5)
- (synth #"prophet" #:note 77 #:attack 4 #:release 2 #:amp 0.5)
- (psleep 0.5)
- (synth #"prophet" #:note 73 #:attack 4 #:release 2 #:amp 0.5)
- (psleep 0.5)
- (synth #"prophet" #:note 69 #:attack 4 #:release 2 #:amp 0.5)
- (psleep 0.5)
- (synth #"prophet" #:note 80 #:attack 4 #:release 2 #:amp 0.5))
-
-
-
-(check-equal? (stream->list
-               (uscore->score
-                (list (synth #"beep" #:note 60)
-                      (psleep 4)
-                      (synth #"beep" #:note 66)
-                      (synth #"beep" #:note 69))
-                2000))
-              (list (list 2000 (synth #"beep" #:note 60))
-                    (list 6000 (synth #"beep" #:note 66))
-                    (list 6000 (synth #"beep" #:note 69))))
+(module+ test
+  (require rackunit
+           rackunit/text-ui)
+  
+  (run-tests
+   (test-suite
+    "lsonic"
+    (check-equal? (play-now? 990) 'play)
+    (check-equal? (play-now? 1001) '(delay 721))
+    
+    (check-equal? (stream->list
+                   (uscore->score
+                    (list (synth #"beep" #:note 60)
+                          (psleep 4)
+                          (synth #"beep" #:note 66)
+                          (synth #"beep" #:note 69))
+                    2000))
+                  (list (list 2000 (synth #"beep" #:note 60))
+                        (list 6000 (synth #"beep" #:note 66))
+                        (list 6000 (synth #"beep" #:note 69)))))))
