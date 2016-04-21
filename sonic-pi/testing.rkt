@@ -1,4 +1,6 @@
-#lang s-exp "lsonic.rkt"
+#lang s-exp sonic-pi/lsonic
+
+;;"lsonic.rkt"
 
 
 

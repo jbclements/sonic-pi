@@ -1,6 +1,6 @@
 #lang racket/base
 
-;; Copyright 2015 John Clements (clements@racket-lang.org)
+;; Copyright 2015-2016 John Clements (clements@racket-lang.org)
 ;; released under Mozilla Public License 2.0
 
 ;; this file contains scsynth FFI. You can't use this unless you know what
@@ -11,7 +11,8 @@
          racket/udp
          racket/runtime-path
          racket/async-channel
-         osc)
+         osc
+         "start-scsynth.rkt")
 
 (provide
  (contract-out [comm-open (-> comm?)]
@@ -30,18 +31,8 @@
 
 (define-logger scsynth)
 
-;; the port numbers for communication with scsynth. In principle, the
-;; second of these (receive-socket) could be dynamically assigned.
-(define SCSYNTH-SOCKET 57118)
-(define RECEIVE-SOCKET 57119)
-
 ;; how long to wait for a response from the server, in seconds
 (define SERVER-TIMEOUT 3.0)
-
-;; this assumes you've already started scsynth, like this:
-;"scsynth -a 1024 -u 57118 -m 131072 -D 0"
-;; this comes from sonic pi, and I can't comment on the necessity for
-;; the -a, -m, or -D arguments.
 
 ;; NB: what I know about scsynth OSC messages comes from the
 ;; "Server Command Reference" HTML document that's a part of this repo.
@@ -69,12 +60,15 @@
 ;; create a 'comm' structure to allow communication with an existing scsynth
 ;; server running on port SCSYNTH-SOCKET of 127.0.0.1
 (define (comm-open)
+  (match-define (list scsynth-udp-socket startup-output server-stdout kill-thunk)
+    (start-scsynth))
   (define the-socket (udp-open-socket))  
-  (udp-bind! the-socket "127.0.0.1" RECEIVE-SOCKET)
-  (udp-connect! the-socket "127.0.0.1" SCSYNTH-SOCKET)
+  (udp-bind! the-socket "127.0.0.1" 0)
+  (udp-connect! the-socket "127.0.0.1" scsynth-udp-socket)
   (define incoming-messages (make-async-channel))
   (start-listening-thread! the-socket incoming-messages)
   (define the-comm (comm the-socket incoming-messages))
+  (will-register scsynth-executor comm kill-thunk)
   ;; check for liveness, print status
   (match (synchronized-command the-comm #"/status")
     [(struct osc-message (#"/status.reply" vals))
@@ -94,6 +88,16 @@
             "received message other than status.reply: ~a"
             other)])
   the-comm)
+
+;; this executor should hopefully shut down the server
+;; when the comm is no longer reachable:
+;;; ... but actually, my experiments suggest that it will *not*.
+(define scsynth-executor (make-will-executor))
+(thread
+ (λ ()
+   (let loop ()
+     (will-execute scsynth-executor)
+     (loop))))
 
 
 ;; start a thread that just reads incoming messages and stores

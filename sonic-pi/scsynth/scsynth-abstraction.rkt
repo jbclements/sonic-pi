@@ -1,6 +1,6 @@
 #lang racket
 
-;; Copyright 2015 John Clements (clements@racket-lang.org)
+;; Copyright 2015-2016 John Clements (clements@racket-lang.org)
 ;; released under Mozilla Public License 2.0
 
 
@@ -13,7 +13,8 @@
 (require "scsynth-communication.rkt"
          "note.rkt"
          (for-syntax syntax/parse)
-         osc)
+         osc
+         racket/runtime-path)
 
 (provide (contract-out
           [startup (-> ctxt?)]
@@ -23,6 +24,13 @@
           [rename synchronize/ctxt synchronize (-> ctxt? void?)])
          make-note
          note?)
+
+(define-runtime-path here ".")
+;; this shouldn't be external. Fix this:
+(define SYNTHDEF-PATH (build-path here "synthdefs"))
+(unless (directory-exists? SYNTHDEF-PATH)
+  (error 'synthdef-path
+         "expected synthdefs at path: ~v\n" SYNTHDEF-PATH))
 
 ;; this represents the context of a running sonic pi graph, containing
 ;; the 'comm' structure, the group of the mixers and the group of the
@@ -64,8 +72,8 @@
   (send-command the-comm #"/clearSched")
   (send-command the-comm #"/g_freeAll" 0)
   (send-command the-comm #"/notify" 1)
-  (send-command the-comm #"/d_loadDir"
-                #"/Applications/old-sonic-pi/Sonic Pi.app/etc/synthdefs")
+  (send-command the-comm #"/d_loadDir" (string->bytes/utf-8
+                                        (path->string SYNTHDEF-PATH)))
   (synchronize the-comm)
   ;; I don't think the current architecture is properly
   ;; guaranteeing that things get freed; specifically,
