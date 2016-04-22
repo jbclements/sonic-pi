@@ -5,6 +5,8 @@
   (for-syntax syntax/parse)
   rackunit)
 
+;; this file... looks like experimentation. might be out of date? 
+
 ;; all kinds of interesting interface questions here. Implicit sequence
 ;; wrapped around the whole thing? Implicit parallelism for loops next to
 ;; each other? How does Sonic Pi handle this?
@@ -111,12 +113,3 @@
 (printf "ending job...\n")
 (end-job job-synth-group job-mixer)
 
-(check-equal? (uscore->score
-               (list (synth #"beep" #:note 60)
-                     (psleep 4)
-                     (synth #"beep" #:note 66)
-                     (synth #"beep" #:note 69))
-               2000)
-              (list (list 2000 (synth #"beep" #:note 60))
-                    (list 6000 (synth #"beep" #:note 66))
-                    (list 6000 (synth #"beep" #:note 69))))
