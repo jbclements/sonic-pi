@@ -174,27 +174,29 @@
   (match-define (struct ctxt (comm mixer-group synth-group-group)) the-ctxt)
   (define job-synth-group (new-group comm 'tail synth-group-group))
   ;; see note at beginning about params here, all borrowed from Sonic PI.
-  (define job-mixer (new-synth comm
-                               #"sonic-pi-basic_mixer" 'head mixer-group
-                               #"amp"
-                               1
-                               #"amp_slide"
-                               0.10000000149011612
-                               #"amp_slide_shape"
-                               5
-                               #"amp_slide_curve"
-                               0
-                               #"in_bus"
-                               12
-                               #"amp"
-                               0.30000001192092896
-                               #"out_bus"
-                               10))
+  (define job-mixer
+    (new-synth comm
+               #"sonic-pi-basic_mixer"
+               'head mixer-group
+               #"amp"
+               1
+               #"amp_slide"
+               0.10000000149011612
+               #"amp_slide_shape"
+               5
+               #"amp_slide_curve"
+               0
+               #"in_bus"
+               12
+               #"amp"
+               0.30000001192092896
+               #"out_bus"
+               10))
   (job-ctxt the-ctxt job-mixer job-synth-group))
 
-;; end a job. Code ported directly from Sonic Pi. It looks like this fades
-;; out the mixer associated with the job and then frees it and its associated
-;; synths
+;; end a job. Code ported directly from Sonic Pi. It looks like this
+;; fades out the mixer associated with the job and then frees it and
+;; its associated synths
 (define (end-job the-job-ctxt)
   (match-define (struct job-ctxt
                   ((struct ctxt (comm _1 _2)) job-mixer job-synth-group))
@@ -213,4 +215,5 @@
   (define job-ctxt (start-job ctxt))
   (play-note job-ctxt (make-note #"beep" #:note 100)
              (+ 500 (current-inexact-milliseconds)))
+  (sleep 5)
   (end-job job-ctxt))
