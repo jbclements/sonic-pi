@@ -26,11 +26,11 @@
          note?)
 
 (define-runtime-path here ".")
-;; this shouldn't be external. Fix this:
 (define SYNTHDEF-PATH (build-path here "synthdefs"))
 (unless (directory-exists? SYNTHDEF-PATH)
   (error 'synthdef-path
          "expected synthdefs at path: ~v\n" SYNTHDEF-PATH))
+(define-logger sonic-pi)
 
 ;; this represents the context of a running sonic pi graph, containing
 ;; the 'comm' structure, the group of the mixers and the group of the
@@ -65,7 +65,8 @@
 ;; and create a new graph. This architecture comes straight from Sonic
 ;; Pi. If it works for them, I'm assuming it will work for us.
 (define (startup)
-  (define the-comm (comm-open))
+  (match-define (list the-comm scsynth-stdout) (comm-open))
+  (start-logging-thread scsynth-stdout)
   (send-command the-comm #"/dumpOSC" 1)
   (synchronize the-comm)
   ;; clear the server and create the groups & mixer that we'll need:
@@ -91,6 +92,16 @@
                                              (,mixer #"force_mono" 0.0)))
   (synchronize the-comm)
   (ctxt the-comm mixer-group synth-group-group))
+
+;; read lines from input port, log to debug. Stop when we get #<eof>.
+(define (start-logging-thread server-stdout)
+  (thread
+   (λ ()
+     (let loop ()
+       (define next-line (read-line server-stdout))
+       (cond [(eof-object? next-line) 'all-done]
+             [else (log-sonic-pi-debug (string-append "[scsynth-stdout] " next-line))
+                   (loop)])))))
 
 
 ;; create a fresh node id.
