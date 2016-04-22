@@ -2,6 +2,7 @@
 
 (define name "Sonic PI")
 
-#;(define compile-omit-paths '("experimental" "paper"))
-#;(define test-omit-paths '("experimental" "paper"))
-#;(define scribblings '(("molis-hai.scrbl" () (tool))))
+(define scribblings '(("sonic-pi.scrbl" () (tool))))
+
+(define compile-omit-paths '())
+(define test-omit-paths '("examples"))
