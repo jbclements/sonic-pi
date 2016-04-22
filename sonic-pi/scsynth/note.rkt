@@ -23,7 +23,8 @@
 ;; with a bunch of default values for various fields.
 (define-syntax (note-struct-definer stx)
   (syntax-parse stx
-    [(_ maker-name (req-field ...) (field-name default-value) ...)
+    [(_ doc-text
+        maker-name (req-field ...) (field-name default-value) ...)
      (define field-names (syntax->list #'(field-name ...)))
      (define kwds (map (lambda (s)
                          (string->keyword (symbol->string (syntax-e s))))
@@ -33,12 +34,20 @@
                    [(byte-string ...) (map (lambda (id)
                                              (string->bytes/utf-8 (symbol->string
                                                                    (syntax-e id))))
-                                           field-names)])
-       #`(define (maker-name req-field ... arg-piece ...)
-           
-           (list req-field ... (list byte-string field-name) ...)))]))
+                                           field-names)]
+                   [(kwd ...) kwds])
+       #`(begin
+           (define (maker-name req-field ... arg-piece ...)
+             
+             (list req-field ... (list byte-string field-name) ...))
+           ;; this value can be pasted into the docs...
+           ;; a bit nasty, but better than creating it by hand.
+           (define doc-text
+             (list
+              (list (quote kwd) (quote field-name) 'number? default-value) ...))))]))
 
 (note-struct-definer
+ doc-text
  make-note
  (synth)
  (note 60)
@@ -63,6 +72,10 @@
 
 (module+ test
   (require rackunit)
+
+  (display doc-text)
+  (newline)
+  
   (check-equal?
    (make-note #"beep")
    '(#"beep"
