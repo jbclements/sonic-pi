@@ -1,5 +1,8 @@
 #lang racket
 
+;; Copyright 2015-2016 John Clements (clements@racket-lang.org)
+;; released under Mozilla Public License 2.0
+
 (require "scsynth/scsynth-abstraction.rkt")
 
 (provide (except-out (all-from-out racket) sleep #%module-begin)

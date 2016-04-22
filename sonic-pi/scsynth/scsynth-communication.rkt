@@ -68,7 +68,6 @@
   (define incoming-messages (make-async-channel))
   (start-listening-thread! the-socket incoming-messages)
   (define the-comm (comm the-socket incoming-messages))
-  (will-register scsynth-executor comm kill-thunk)
   ;; check for liveness, print status
   (match (synchronized-command the-comm #"/status")
     [(struct osc-message (#"/status.reply" vals))
@@ -88,16 +87,6 @@
             "received message other than status.reply: ~a"
             other)])
   the-comm)
-
-;; this executor should hopefully shut down the server
-;; when the comm is no longer reachable:
-;;; ... but actually, my experiments suggest that it will *not*.
-(define scsynth-executor (make-will-executor))
-(thread
- (λ ()
-   (let loop ()
-     (will-execute scsynth-executor)
-     (loop))))
 
 
 ;; start a thread that just reads incoming messages and stores

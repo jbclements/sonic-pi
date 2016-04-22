@@ -1,5 +1,8 @@
 #lang racket
 
+;; Copyright 2015-2016 John Clements (clements@racket-lang.org)
+;; released under Mozilla Public License 2.0
+
 (require racket/runtime-path
          racket/block)
 
@@ -7,7 +10,7 @@
           [start-scsynth
            (-> (list/c fixnum?
                        (listof string?)
-                       output-port?
+                       input-port?
                        (-> void?)))]))
 
 (define-runtime-path here ".")
@@ -74,8 +77,8 @@
   ;; server process, in reverse order
   (define lines-of-output (list))
   
-  ;; record and display all lines of output, send a signal the first time
-  ;; a successful startup message is seen.
+  ;; record and display lines of output until successful startup, then
+  ;; send a signal and halt
   (thread
    (λ ()
      (let ([seen-success? #f])
@@ -85,10 +88,8 @@
          (display next-line)
          (newline)
          (cond [(eof-object? next-line) 'process-done]
-               [(and (not seen-success?)
-                     (equal? next-line SUCCESSFUL-START-LINE))
-                (channel-put startup-status 'server-up)
-                (loop)]
+               [(equal? next-line SUCCESSFUL-START-LINE)
+                (channel-put startup-status 'server-up)]
                [else (loop)])))))
   
   ;; signal 

@@ -1,9 +1,5 @@
 #lang s-exp sonic-pi/lsonic
 
-;;"lsonic.rkt"
-
-
-
 (synth #"beep" #:note 60  #:release 0.5)
 (synth #"prophet" #:note 72 #:attack 4 #:release 2 #:amp 0.5)
 (sleep 0.5)
