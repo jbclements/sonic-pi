@@ -9,7 +9,6 @@
 (require racket/contract
          racket/match
          racket/udp
-         racket/runtime-path
          racket/async-channel
          osc
          "start-scsynth.rkt")
