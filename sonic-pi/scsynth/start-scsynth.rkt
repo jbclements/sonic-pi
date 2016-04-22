@@ -59,11 +59,12 @@
   (define udp-port (stream-ref persistent-random-udp-port-stream
                                udp-port-idx))
   (match-define (list from-port to proc-id err control-proc)
-    (process* SCSYNTH-PATH
-              "-a" "1024"
-              "-u" (number->string udp-port)
-              "-m" "131072"
-              "-D" "0"))
+    (parameterize ([current-subprocess-custodian-mode 'kill])
+      (process* SCSYNTH-PATH
+                "-a" "1024"
+                "-u" (number->string udp-port)
+                "-m" "131072"
+                "-D" "0")))
   
   (printf "started scsynth with process id ~v\n" proc-id)
   
@@ -116,7 +117,6 @@
             "server process halted with exit code ~v. Not sure why."
             n)]
     ['server-up
-     (define udp)
      (list udp-port
            (reverse lines-of-output)
            from-port
@@ -126,5 +126,19 @@
             "internal error: unexpected result from startup: ~e"
             other)]))
 
+;; start the scsynth server:
 (define (start-scsynth)
   (try-startup 0))
+
+(module+ test
+  (require rackunit)
+
+  (match-define (list udp-port headers server-stdout killer)
+    (start-scsynth))
+  (check-match udp-port (? exact-nonnegative-integer?))
+  (check-match headers (list (? string?) ...))
+  (check-match server-stdout (? input-port?))
+  (check-match killer (? procedure?))
+
+  ;; clean up....
+  (killer))
