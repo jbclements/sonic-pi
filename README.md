@@ -6,7 +6,9 @@ functionality... even down to the name.
 
 This code is most easily installed using racket's package manager, `raco`:
 
+```
 raco pkg install sonic-pi
+```
 
 Let me make it absolutely clear, just in case: this package is NOT a
 version of Sonic Pi; it's a bunch of code that uses scsynth in just the
