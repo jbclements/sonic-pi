@@ -14,7 +14,7 @@
          "start-scsynth.rkt")
 
 (provide
- (contract-out [comm-open (-> comm?)]
+ (contract-out [comm-open (-> (list/c comm? input-port?))]
                [synchronize (-> comm? void?)]
                [send-command/elt (-> comm? osc-element? void?)]
                [send-command (->* (comm? bytes?) #:rest (listof osc-value?) void?)]
@@ -85,7 +85,7 @@
      (error 'scsynth-communication
             "received message other than status.reply: ~a"
             other)])
-  the-comm)
+  (list the-comm server-stdout))
 
 
 ;; start a thread that just reads incoming messages and stores
