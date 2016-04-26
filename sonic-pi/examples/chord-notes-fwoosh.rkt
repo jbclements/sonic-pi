@@ -28,9 +28,18 @@
   (cond [(not (empty? w))
          (define note (pick-from w))
          (play-note job
-                    (make-note #"prophet"
+                    (make-note #"beep"
                                #:attack 0.0
-                               #:note (+ 50 note))
+                               #:release 0.5
+                               #:note (+ 80 note))
+                    0.0)
+         
+         (define note2 (pick-from w))
+         (play-note job
+                    (make-note #"beep"
+                               #:attack 0.0
+                               #:release 0.5
+                               #:note (+ 80 note2))
                     0.0)]
         [else 'do-nothing])
   w)
