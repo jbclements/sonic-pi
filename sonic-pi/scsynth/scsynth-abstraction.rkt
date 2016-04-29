@@ -11,7 +11,6 @@
 ;; and an 'fx' group, even though there aren't any recording or FX mechanisms.
 
 (require "scsynth-communication.rkt"
-         "note.rkt"
          (for-syntax syntax/parse)
          osc
          racket/runtime-path)
@@ -21,9 +20,10 @@
           [start-job (-> ctxt? job-ctxt?)]
           [play-note (-> job-ctxt? note? inexact-real? void?)]
           [end-job (-> job-ctxt? void?)]
-          [rename synchronize/ctxt synchronize (-> ctxt? void?)])
-         make-note
-         note?)
+          [rename synchronize/ctxt synchronize (-> ctxt? void?)]))
+
+;; must match definition in note.rkt....
+(define note? (cons/c bytes? (listof (list/c bytes? (or/c bytes? real?)))))
 
 (define-runtime-path here ".")
 (define SYNTHDEF-PATH (build-path here "synthdefs"))
@@ -174,7 +174,7 @@
    (ctxt-comm (job-ctxt-ctxt job-ctxt))
    time
    #"/s_new"
-   (bytes-append #"sonic-pi-" (first note))
+   (first note)
    (fresh-node-id!)
    0
    (job-ctxt-synth-group job-ctxt)
@@ -221,10 +221,11 @@
 
 
 (module+ main
+  (require "../note.rkt")
 
   (define ctxt (startup))
   (define job-ctxt (start-job ctxt))
-  (play-note job-ctxt (make-note #"beep" #:note 100)
+  (play-note job-ctxt (note "beep" 100)
              (+ 500 (current-inexact-milliseconds)))
   (sleep 5)
   (end-job job-ctxt))

@@ -1,12 +1,8 @@
 #lang racket
 
-(require sonic-pi/scsynth/scsynth-abstraction
+(require sonic-pi/go
          2htdp/image
          2htdp/universe)
-
-(define ctxt (startup))
-
-(define job (start-job ctxt))
 
 (define table
   '(("1" (0 4 7 11))
@@ -22,25 +18,20 @@
   (list-ref ch (random (length ch))))
 
 ;; a world is a list of note-number-offsets
+(current-synth "beep")
 
 ;; play a random note from the list, don't change the world:
 (define (rand-note w)
   (cond [(not (empty? w))
-         (define note (pick-from w))
-         (play-note job
-                    (make-note #"beep"
-                               #:attack 0.0
-                               #:release 0.5
-                               #:note (+ 80 note))
-                    0.0)
+         (define notenum (pick-from w))
+         (note (+ 80 notenum)
+               "attack" 0.0
+               "release" 0.5)
          
          (define note2 (pick-from w))
-         (play-note job
-                    (make-note #"beep"
-                               #:attack 0.0
-                               #:release 0.5
-                               #:note (+ 80 note2))
-                    0.0)]
+         (note (+ 80 note2)
+               "attack" 0.0
+               "release" 0.5)]
         [else 'do-nothing])
   w)
 

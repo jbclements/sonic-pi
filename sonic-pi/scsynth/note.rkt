@@ -2,7 +2,10 @@
 
 (require (for-syntax syntax/parse
                      racket/base)
-         racket/contract)
+         racket/contract
+         racket/match)
+
+;; 2016-04-29: GETTING RID OF THIS FILE
 
 ;; this file is just for the DRY macro magic on notes
 
