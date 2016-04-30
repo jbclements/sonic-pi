@@ -33,7 +33,8 @@ thing, it's pretty obvious what it'll look like: it'll look like Sonic
 Pi. That means less design work. Here are some functions:
 
 @defproc[(startup) context?]{
- Starts an scsynth, returns a context that can be used to play things.
+ Starts an scsynth, returns a context that can be used to ... well, to
+ create a job context.
 }
 
 @defproc[(start-job [ctxt context?]) job-context?]{

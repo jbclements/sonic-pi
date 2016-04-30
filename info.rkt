@@ -7,12 +7,10 @@
         "osc"
         "rackunit-lib"
         "typed-racket-lib"
-        #;(
-        "scribble-lib"
-        "typed-racket-more"
-        "unstable-contract-lib"
-        "web-server-lib")))
+        "htdp-lib"))
 
-#;(define build-deps
-  (list "rackunit-lib"))
+(define build-deps
+  (list "rackunit-lib"
+        "racket-doc"
+        "scribble-lib"))
 
