@@ -6,6 +6,7 @@
          (prefix-in n: "note.rkt"))
 
 (provide note
+         note-at
          current-synth)
 
 (define ctxt (startup))
@@ -17,6 +18,12 @@
   (play-note job-ctxt
              (apply n:note (current-synth) num args)
              (current-inexact-milliseconds)))
+
+(define (note-at num time . args)
+  (play-note job-ctxt
+             (apply n:note (current-synth) num args)
+             (+ (* 1000 time)
+                (current-inexact-milliseconds))))
 
 
 
