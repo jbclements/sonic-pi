@@ -8,7 +8,8 @@
 ;; parameters can be either byte-strings or real numbers
 (define-type ParamVal (U Bytes Real))
 
-(define-type ParamAssoc (Listof (List Bytes ParamVal)))
+(define-type ParamField (List Bytes ParamVal))
+(define-type ParamAssoc (Listof ParamField))
 
 ;; a note has a distinguished synth name, then other params
 (define-type Note (Pairof Bytes ParamAssoc))
@@ -21,8 +22,7 @@
    (λ ([x : (List Symbol ParamVal)])
      (list (string->bytes/utf-8 (symbol->string (car x)))
            (cadr x)))
-   '((note 60)
-     (note_slide 0)
+   '((note_slide 0)
      (note_slide_shape 5)
      (node_slide_curve 0)
      (amp 1)
@@ -57,8 +57,8 @@
 (define (note synth midi-pitch . param-parts)
   (define other-params (group-params param-parts))
   (cons (bytes-append #"sonic-pi-" (string->bytes/utf-8 synth))
-        (complete-field-list (cons `(#"note" ,midi-pitch)
-                                   other-params))))
+        (cons (list #"note" (ann midi-pitch ParamVal))
+              (complete-field-list other-params))))
 
 ;; turn an interleaved list of names and values into a
 ;; paramassoc (also changing strings into byte-strings as we go)
@@ -81,6 +81,11 @@
 (module+ test
   (require typed/rackunit)
 
+  (check-exn #px"expected field name"
+             (λ () (group-params '("abc" 0.5 78 "def"))))
+  (check-exn #px"leftover value"
+             (λ () (group-params '("abc" 0.5 "def" 78 "ghi"))))
+
   (check-equal? (group-params '("x" 0.5 "y" 0.421 "z" "blue"))
                 '((#"x" 0.5)
                   (#"y" 0.421)
@@ -90,8 +95,7 @@
                 default-vals)
 
   (check-equal? (complete-field-list '((#"amp" 0.5)))
-                '((#"note" 60)
-                  (#"note_slide" 0)
+                '((#"note_slide" 0)
                   (#"note_slide_shape" 5)
                   (#"node_slide_curve" 0)
                   (#"amp" 0.5)
@@ -112,8 +116,7 @@
 
   (check-equal? (complete-field-list '((#"amp" 0.5)
                                        (#"note_slide" 3)))
-                '((#"note" 60)
-                  (#"note_slide" 3)
+                '((#"note_slide" 3)
                   (#"note_slide_shape" 5)
                   (#"node_slide_curve" 0)
                   (#"amp" 0.5)

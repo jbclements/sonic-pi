@@ -10,6 +10,7 @@
 
 (require
   "scsynth/scsynth-abstraction.rkt"
+  "note.rkt"
   (for-syntax syntax/parse)
   rackunit)
 
@@ -126,7 +127,7 @@
 (define (psleep t)
   (pisleep t))
 
-(define synth make-note)
+(define synth note)
 
 (define-syntax (my-module-begin stx)
   (syntax-parse stx
@@ -159,11 +160,11 @@
     
     (check-equal? (stream->list
                    (uscore->score
-                    (list (synth #"beep" #:note 60)
+                    (list (synth "beep" 60)
                           (psleep 4)
-                          (synth #"beep" #:note 66)
-                          (synth #"beep" #:note 69))
+                          (synth "beep" 66)
+                          (synth "beep" 69))
                     2000))
-                  (list (list 2000 (synth #"beep" #:note 60))
-                        (list 6000 (synth #"beep" #:note 66))
-                        (list 6000 (synth #"beep" #:note 69)))))))
+                  (list (list 2000 (synth "beep" 60))
+                        (list 6000 (synth "beep" 66))
+                        (list 6000 (synth "beep" 69)))))))

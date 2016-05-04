@@ -55,30 +55,42 @@ Pi. That means less design work. Here are some functions:
  play a note immediately.)
 }
 
-@defproc[(make-note [synth-name bytes?]
-                    (#:note note number? 60)
-                    (#:note_slide note_slide number? 0)
-                    (#:note_slide_shape note_slide_shape number? 5)
-                    (#:node_slide_curve node_slide_curve number? 0)
-                    (#:amp amp number? 1)
-                    (#:amp_slide amp_slide number? 0)
-                    (#:amp_slide_shape amp_slide_shape number? 5)
-                    (#:pan pan number? 0)
-                    (#:pan_slide pan_slide number? 0)
-                    (#:pan_slide_shape pan_slide_shape number? 5)
-                    (#:pan_slide_curve pan_slide_curve number? 0)
-                    (#:attack attack number? 0)
-                    (#:decay decay number? 0)
-                    (#:sustain sustain number? 0)
-                    (#:release release number? 1)
-                    (#:attack_level attack_level number? 1)
-                    (#:sustain_level sustain_level number? 1)
-                    (#:env_curve env_curve number? 2)
-                    (#:out_bus out_bus number? 12.0)) note?]{
-  makes a note. I believe this list of parameters is inherited from
- ... scsynth?
-  There's a terrible shortage of documentation surrounding scsynth.
 }
+
+@defmodule[sonic-pi/note]{
+
+@defproc[(note [synth-name string?] [note-num real?] [param-part (or string? real?)] ...) note?]{
+Creates a note. In addition to the @racket[synth-name] and @racket[note-num] (represented as a MIDI
+ note number), users may specify non-default values for one of many other parameters using and
+ interleaved parameter-name / value style. For instance:
+
+@racketblock[(note "saw" 78 "attack" 0.5 "amp" 0.5)]
+
+Here's the full list of parameters and their defaults:
+
+@racketblock[
+   '((note_slide 0)
+     (note_slide_shape 5)
+     (node_slide_curve 0)
+     (amp 1)
+     (amp_slide 0)
+     (amp_slide_shape 5)
+     (pan 0)
+     (pan_slide 0)
+     (pan_slide_shape 5)
+     (pan_slide_curve 0)
+     (attack 0)
+     (decay 0)
+     (sustain 0)
+     (release 1)
+     (attack_level 1)
+     (sustain_level 1)
+     (env_curve 2)
+     (out_bus 12.0))]
+
+ }
+
+ 
 
 @defproc[(note? [note any/c]) boolean?]{
   returns true for notes.
