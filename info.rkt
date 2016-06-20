@@ -7,6 +7,7 @@
         "osc"
         "rackunit-lib"
         "typed-racket-lib"
+        "typed-racket-more"
         "htdp-lib"))
 
 (define build-deps
