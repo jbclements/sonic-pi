@@ -11,15 +11,13 @@
            (-> (list/c fixnum?
                        (listof string?)
                        input-port?
-                       (-> void?)))]))
+                       (-> void?)))]
+          [shutdown-scsynth (-> void)]))
 
 (define-runtime-path here ".")
-
-(unless (equal? (system-type) 'macosx)
-  (fprintf (current-error-port)
-           "WARNING: startup of scsynth unlikely to succeed except on mac\n"))
-
-(define SCSYNTH-PATH (build-path here "scsynth"))
+(define SCSYNTH-PATH-MAC (build-path here "scsynth"))
+;; currently broken
+(define SCSYNTH-PATH-WIN (build-path "C" "Program Files" "SuperCollider-3.8.0" "scsynth.exe"))
 
 ;; honestly, all of this machinery is a bit silly.
 (define rng (vector->pseudo-random-generator
@@ -63,11 +61,7 @@
                                udp-port-idx))
   (match-define (list from-port to proc-id err control-proc)
     (parameterize ([current-subprocess-custodian-mode 'kill])
-      (process* SCSYNTH-PATH
-                "-a" "1024"
-                "-u" (number->string udp-port)
-                "-m" "131072"
-                "-D" "0")))
+      (os-specific-startup udp-port)))
   
   (printf "started scsynth with process id ~v\n" proc-id)
   
@@ -127,9 +121,40 @@
             "internal error: unexpected result from startup: ~e"
             other)]))
 
+;; start scsynth as required by the current operating system
+(define (os-specific-startup udp-port)
+  (match (system-type)
+    ['macosx (process* SCSYNTH-PATH-MAC
+                       "-a" "1024"
+                       "-m" "131071"
+                       "-D" "0"
+                       "-u" (number->string udp-port))]
+    ['unix (process (string-append "scsynth -a 1024 -m 131071 -D 0 -R 0 -l 1 -i 16 -o 16 -u "
+                                   (number->string udp-port)))]
+    ;boot_and_wait(scsynth_path, "-u", @port.to_s, "-a", num_audio_busses_for_current_os.to_s,
+    ;"-m", "131072", "-D", "0", "-R", "0", "-l", "1", "-i", "16", "-o", "16", "-b", num_buffers_for_current_os.to_s,
+    ;"-U", "#{native_path}/plugins/", "-B", "127.0.0.1")
+    ['windows (process* SCSYNTH-PATH-WIN
+                        "-u" (number->string udp-port)
+                        "-m" "131071"
+                        "-D" "0"
+                        "-R" "0"
+                        "-l" "1"
+                        "-i" "16"
+                        "-o" "16"
+                        "-B" "127.0.0.1")]
+    [else (error 'startup "I don't recognize your operating system")]))
+
 ;; start the scsynth server:
 (define (start-scsynth)
   (try-startup 0))
+
+;; once finished on unix, you need to kill jack or
+;; the ports remain in use and jack hijacks your audio
+;; for all other programs
+(define (shutdown-scsynth)
+  (when (equal? (system-type) 'unix)
+      (process "killall -9 jackd")))
 
 (module+ test
   (require rackunit)
@@ -142,4 +167,5 @@
   (check-match killer (? procedure?))
 
   ;; clean up....
-  (killer))
+  (killer)
+  (shutdown-scsynth))

@@ -11,6 +11,7 @@
 ;; and an 'fx' group, even though there aren't any recording or FX mechanisms.
 
 (require "scsynth-communication.rkt"
+         "start-scsynth.rkt"
          (for-syntax syntax/parse)
          osc
          racket/runtime-path)
@@ -56,7 +57,7 @@
 
 ;; experimentation suggests that scsynth doesn't ever handle 64-bit ints.
 ;; here's the error message on trying to create a node with id 2^39:
-;; [ "#bundle", -2791018499003203584, 
+;; [ "#bundle", -2791018499003203584,
 ;;    [ "/s_new", "sonic-pi-beep", !unknown tag 'h' 0x68 ! ]
 ;; (I also get the sense that scsynth should be printing the timestamp
 ;; as an unsigned int...)
@@ -216,7 +217,12 @@
   (send-command comm #"/n_set" job-mixer #"amp" 0.0)
   (sleep 1)
   (send-command comm #"/n_free" job-mixer)
-  (send-command comm #"/n_free" job-synth-group))
+  (send-command comm #"/n_free" job-synth-group)
+  ;; for now this is needed for more than one run to happen
+  ;; when there are multiple jobs going on this will need to change
+  (shutdown-scsynth)
+  ;; promises to return void
+  (void))
 
 
 

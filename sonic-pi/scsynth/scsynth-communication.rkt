@@ -10,6 +10,7 @@
          racket/match
          racket/udp
          racket/async-channel
+         racket/system
          osc
          "start-scsynth.rkt")
 
@@ -85,7 +86,17 @@
      (error 'scsynth-communication
             "received message other than status.reply: ~a"
             other)])
+  (when (equal? (system-type) 'unix)
+    (run-jack-connect))
   (list the-comm server-stdout))
+
+;; extra step required for unix operating systems
+;; run jack_connect to redirect input and output
+(define (run-jack-connect)
+  (process "jack_connect SuperCollider:out_1 system:playback_1")
+  (process "jack_connect SuperCollider:out_2 system:playback_2")
+  (process "jack_connect SuperCollider:in_1 system_capture_1")
+  (process "jack_connect SuperCollider:in_2 system_capture_2"))
 
 
 ;; start a thread that just reads incoming messages and stores
