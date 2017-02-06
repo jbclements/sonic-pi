@@ -3,7 +3,9 @@
 (require racket/match)
 
 (provide note
-         note?)
+         note?
+         note-name
+         note-params)
 
 ;; parameters can be either byte-strings or real numbers
 (define-type ParamVal (U Bytes Real))
@@ -12,9 +14,13 @@
 (define-type ParamAssoc (Listof ParamField))
 
 ;; a note has a distinguished synth name, then other params
-(define-type Note (Pairof Bytes ParamAssoc))
+;(define-type Note (Pairof Bytes ParamAssoc))
+(define-struct Note ([name : Bytes] [params : ParamAssoc]) #:transparent)
 
-(define-predicate note? Note)
+;; redefine everything with lowercase
+(define note? Note?)
+(define note-name Note-name)
+(define note-params Note-params)
 
 (: default-vals ParamAssoc)
 (define default-vals
@@ -56,7 +62,7 @@
 (: note (String Real (U String Real) * -> Note))
 (define (note synth midi-pitch . param-parts)
   (define other-params (group-params param-parts))
-  (cons (bytes-append #"sonic-pi-" (string->bytes/utf-8 synth))
+  (Note (bytes-append #"sonic-pi-" (string->bytes/utf-8 synth))
         (cons (list #"note" (ann midi-pitch ParamVal))
               (complete-field-list other-params))))
 
@@ -77,6 +83,23 @@
     [(cons leftover '())
      (error 'group-params "leftover value in params: ~e"
             leftover)]))
+
+;; control a note's parameters
+;; should I maybe consider finding a more efficient way
+;; of doing this?
+(: control-note (Note (U String Real) * -> Note))
+(define (control-note n . param-parts)
+  (Note (Note-name n)
+        (set-params (Note-params n) (group-params param-parts))))
+
+;; sets the parameters for a note
+(: set-params (ParamAssoc ParamAssoc -> ParamAssoc))
+(define (set-params orig new)
+  (for/list ([pr (in-list orig)])
+    (match-define (list field-name default-val) pr)
+    (match (assoc field-name new)
+      [(list _ new-val) (list field-name new-val)]
+      [#f (list field-name default-val)])))
 
 (module+ test
   (require typed/rackunit)
@@ -136,8 +159,8 @@
                   (#"out_bus" 12.0)))
 
   (check-equal? (note "bronky" 39)
-                '(#"sonic-pi-bronky"
-                  (#"note" 39)
+                (Note #"sonic-pi-bronky"
+                  '((#"note" 39)
                   (#"note_slide" 0)
                   (#"note_slide_shape" 5)
                   (#"node_slide_curve" 0)
@@ -155,11 +178,11 @@
                   (#"attack_level" 1)
                   (#"sustain_level" 1)
                   (#"env_curve" 2)
-                  (#"out_bus" 12.0)))
+                  (#"out_bus" 12.0))))
 
   (check-equal? (note "bronky" 39 "decay" 0.9)
-                '(#"sonic-pi-bronky"
-                  (#"note" 39)
+                (Note #"sonic-pi-bronky"
+                  '((#"note" 39)
                   (#"note_slide" 0)
                   (#"note_slide_shape" 5)
                   (#"node_slide_curve" 0)
@@ -177,4 +200,4 @@
                   (#"attack_level" 1)
                   (#"sustain_level" 1)
                   (#"env_curve" 2)
-                  (#"out_bus" 12.0))))
+                  (#"out_bus" 12.0)))))

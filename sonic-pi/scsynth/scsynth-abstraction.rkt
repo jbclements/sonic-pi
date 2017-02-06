@@ -11,20 +11,26 @@
 ;; and an 'fx' group, even though there aren't any recording or FX mechanisms.
 
 (require "scsynth-communication.rkt"
-         "start-scsynth.rkt"
          (for-syntax syntax/parse)
          osc
-         racket/runtime-path)
+         racket/runtime-path
+         "../sample.rkt"
+         "../note.rkt"
+         )
 
 (provide (contract-out
           [startup (-> ctxt?)]
           [start-job (-> ctxt? job-ctxt?)]
           [play-note (-> job-ctxt? note? inexact-real? void?)]
+          [play-sample (-> job-ctxt? sample? inexact-real? void?)]
+          [load-sample (-> job-ctxt? bytes? (listof number?))]
           [end-job (-> job-ctxt? void?)]
           [rename synchronize/ctxt synchronize (-> ctxt? void?)]))
 
 ;; must match definition in note.rkt....
-(define note? (cons/c bytes? (listof (list/c bytes? (or/c bytes? real?)))))
+#;(define note? (cons/c bytes? (listof (list/c bytes? (or/c bytes? real?)))))
+#;(define sample? (cons/c (cons/c bytes? bytes?)
+                        (listof (list/c bytes? (or/c bytes? real?)))))
 
 (define-runtime-path here ".")
 (define SYNTHDEF-PATH (build-path here "synthdefs"))
@@ -77,6 +83,11 @@
   (send-command the-comm #"/d_loadDir" (string->bytes/utf-8
                                         (path->string SYNTHDEF-PATH)))
   (synchronize the-comm)
+  ;; sonic-pi reads in rand-stream.wav buffer, so i will too
+  (send-command the-comm #"/b_allocRead" 0 (string->bytes/utf-8 "/usr/share/sonic-pi/buffers/rand-stream.wav") 0 0)
+  (synchronize the-comm)
+  (send-command the-comm #"/clearSched")
+  (send-command the-comm #"/g_freeAll" 0)
   ;; I don't think the current architecture is properly
   ;; guaranteeing that things get freed; specifically,
   ;; things in these groups might not be freed by the g_freeAll
@@ -87,9 +98,9 @@
   (define recording-group (new-group the-comm 'after mixer-group))
   (define mixer (new-synth the-comm #"sonic-pi-mixer" 'head mixer-group
                            #"in_bus" 10))
-  (send-command/elt the-comm `#s(osc-message #"/n_set"
+  #;(send-command/elt the-comm `#s(osc-message #"/n_set"
                                              (,mixer #"invert_stereo" 0.0)))
-  (send-command/elt the-comm `#s(osc-message #"/n_set"
+  #;(send-command/elt the-comm `#s(osc-message #"/n_set"
                                              (,mixer #"force_mono" 0.0)))
   (synchronize the-comm)
   (ctxt the-comm mixer-group synth-group-group))
@@ -117,6 +128,15 @@
             [else (error 'node-id "current node id too large: ~v\n"
                          (unbox node-id))]))))
 
+;; create a new buffer id
+(define fresh-buffer-id!
+  (let ([buff-id (box 2)])
+    (λ ()
+      (cond [(int32? (unbox buff-id))
+             (set-box! buff-id (add1 (unbox buff-id)))
+             (sub1 (unbox buff-id))]
+            [else (error 'buff-id "ran out of buffer space")]))))
+
 ;; given the comm, a placement command, and a node ID,
 ;; create a new group in the specified location.
 ;; return the new ID
@@ -140,6 +160,18 @@
      (list synthdef-name new-node-id command-num relative-to)
      args)))
   new-node-id)
+
+;; load a sample into a buffer
+(define (load-sample job-ctxt sname)
+  (define buff-id (fresh-buffer-id!))
+  (define the-comm (ctxt-comm (job-ctxt-ctxt job-ctxt)))
+  (send-command/elt
+   the-comm
+   (osc-message
+    #"/b_allocRead"
+    (append (list buff-id sname 0 0))))
+  (synchronize the-comm)
+  (query-buffer the-comm buff-id))
 
 ;; convert a placement command symbol to the corresponding number
 ;; (defined in the scsynth API)
@@ -175,11 +207,31 @@
    (ctxt-comm (job-ctxt-ctxt job-ctxt))
    time
    #"/s_new"
-   (first note)
+   (note-name note)
    (fresh-node-id!)
    0
    (job-ctxt-synth-group job-ctxt)
-   (apply append (rest note))))
+   (apply append (note-params note))))
+
+;; play a given sample at the given time
+(define (play-sample job-ctxt sample time)
+  ;(printf "playing sample with buf id ~v\n\n" (car (first sample)))
+  (apply
+   send-bundled-message
+   (ctxt-comm (job-ctxt-ctxt job-ctxt))
+   time
+   #"/s_new"
+   ; sample_name
+   (Sample-name sample)
+   ; buff-id
+   (fresh-node-id!)
+   ; pos_code
+   (placement-command->number 'head)
+   ; group_id
+   (job-ctxt-synth-group job-ctxt)
+   ; args
+   (apply append (Sample-params sample))
+   ))
 
 ;; start a job. I don't even know what a job is!
 (define (start-job the-ctxt)
@@ -220,15 +272,12 @@
   (send-command comm #"/n_free" job-synth-group)
   ;; for now this is needed for more than one run to happen
   ;; when there are multiple jobs going on this will need to change
-  (shutdown-scsynth)
-  ;; promises to return void
-  (void))
+  (shutdown-scsynth))
 
 
 
 (module+ main
   (require "../note.rkt")
-
   (define ctxt (startup))
   (define job-ctxt (start-job ctxt))
   (play-note job-ctxt (note "beep" 100)

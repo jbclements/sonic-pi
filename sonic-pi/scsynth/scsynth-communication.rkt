@@ -21,7 +21,9 @@
                [send-command (->* (comm? bytes?) #:rest (listof osc-value?) void?)]
                [synchronized-command/elt (-> comm? osc-element? osc-message?)]
                [synchronized-command (->* (comm? bytes?) #:rest (listof osc-value?)
-                                          osc-message?)])
+                                          osc-message?)]
+               [shutdown-scsynth (-> void)]
+               [query-buffer (-> comm? number? any/c)])
  comm?)
 
 ;; a comm structure represents information necessary to communicate
@@ -90,6 +92,7 @@
     (run-jack-connect))
   (list the-comm server-stdout))
 
+
 ;; extra step required for unix operating systems
 ;; run jack_connect to redirect input and output
 (define (run-jack-connect)
@@ -109,11 +112,11 @@
      (let loop ()
        (define-values (len hostname src-port)
          (udp-receive! the-socket receive-buffer))
-       #;(printf "len: ~v\nhostname: ~v\nsrc-port: ~v\n" len hostname src-port)
+       ;(printf "len: ~v\nhostname: ~v\nsrc-port: ~v\n" len hostname src-port)
        (define received (subbytes receive-buffer 0 len))
-       #;(printf "received buffer: ~v\n" received)
+       ;(printf "received buffer: ~v\n" received)
        (define decoded (bytes->osc-element received))
-       #;(printf "decoded: ~e\n" decoded)
+       (printf "decoded: ~e\n" decoded)
        (flatten-into-queue incoming-messages decoded)
        (loop)))))
 
@@ -136,9 +139,19 @@
 (define (send-command ctxt address . args)
   (send-command/elt ctxt (osc-message address args)))
 
+;; query a buffer for the info
+(define (query-buffer ctxt buff-id)
+  (define msg (osc-message #"/b_query" (append (list buff-id))))
+  (match (synchronized-command/elt ctxt msg)
+    [(struct osc-message (#"/b_info" vals))
+     vals]
+    [other (error 'query-buffer "internal error querying buffer")]))
+
+
 ;; send an element (no wrapping)
 (define (send-command/elt ctxt msg)
   ;; NB: THIS CAN BLOCK:
+  (printf "sending: ~v\n" msg)
   (udp-send (comm-socket ctxt) (osc-element->bytes msg)))
 
 ;; get a message (but don't wait longer than SERVER-TIMEOUT
@@ -162,7 +175,7 @@
 (define (discard-til-match incoming-messages pred)
   (define msg (wait-for-message incoming-messages))
   (cond [(pred msg) ; success!
-         (void)]
+         msg] ;; 2017-02-04: now returns the message
         [else (log-scsynth-warning
                "discarding message while waiting for a different one: ~e"
                msg)
@@ -176,7 +189,8 @@
   (discard-til-match (comm-incoming ctxt)
                      (lambda (msg)
                        (and (equal? (osc-message-address msg) #"/synced")
-                            (equal? (osc-message-args msg) (list sync-id))))))
+                            (equal? (osc-message-args msg) (list sync-id)))))
+  (void))
 
 ;; use /sync to discard all waiting messages, then make the
 ;; call and wait for an incoming one. Combines address and

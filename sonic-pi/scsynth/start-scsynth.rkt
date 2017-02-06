@@ -115,6 +115,7 @@
      (list udp-port
            (reverse lines-of-output)
            from-port
+           ;TODO: redefine this to shutdown-scsynth
            (λ () (control-proc 'kill)))]
     [other
      (error 'server-startup
@@ -154,7 +155,8 @@
 ;; for all other programs
 (define (shutdown-scsynth)
   (when (equal? (system-type) 'unix)
-      (process "killall -9 jackd")))
+      (process "killall -9 jackd"))
+  (void))
 
 (module+ test
   (require rackunit)

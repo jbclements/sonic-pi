@@ -6,11 +6,13 @@
 (provide (except-out (all-from-out racket) sleep #%module-begin)
          (rename-out [my-module-begin #%module-begin]
                      [psleep sleep])
-         synth)
+         synth
+         sample)
 
 (require
   "scsynth/scsynth-abstraction.rkt"
   "note.rkt"
+  "sample.rkt"
   (for-syntax syntax/parse)
   rackunit)
 
@@ -41,7 +43,15 @@
 
 ;; given a job-ctxt and an event, queue the note
 (define (queue-event job-ctxt evt)
-  (play-note job-ctxt (second evt) (first evt)))
+  (cond
+    [(sample? (second evt))
+     (define b-info
+       (load-sample job-ctxt (Sample-path (second evt))))
+     (play-sample job-ctxt
+                  (control-sample (second evt) "buf" (first b-info))
+                  (first evt))]
+    [(note? (second evt)) (play-note job-ctxt (second evt) (first evt))])
+    )
 
 ;; given a job-ctxt and a list of events, queue them all.
 (define (queue-events job-ctxt score)
@@ -102,10 +112,15 @@
                                     (+ vtime (* MSEC-PER-SEC
                                                 (pisleep-duration
                                                  (first uscore)))))]
+                    [(sample? (first uscore))
+                     (stream-cons (list vtime (first uscore))
+                                  (uscore->score (rest uscore)
+                                                 vtime))]
                     [(note? (first uscore))
                      (stream-cons (list vtime (first uscore))
                                   (uscore->score (rest uscore)
                                                  vtime))]
+                    
                     [else (raise-argument-error 'uscore->score
                                                 "list of notes and sleeps"
                                                 0 uscore vtime)])]))
