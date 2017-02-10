@@ -7,12 +7,15 @@
          (rename-out [my-module-begin #%module-begin]
                      [psleep sleep])
          synth
-         sample)
+         sample
+         psleep
+         control)
 
 (require
   "scsynth/scsynth-abstraction.rkt"
   "note.rkt"
   "sample.rkt"
+  "sample-loader.rkt"
   (for-syntax syntax/parse)
   rackunit)
 
@@ -45,13 +48,28 @@
 (define (queue-event job-ctxt evt)
   (cond
     [(sample? (second evt))
-     (define b-info
-       (load-sample job-ctxt (Sample-path (second evt))))
-     (play-sample job-ctxt
-                  (control-sample (second evt) "buf" (first b-info))
-                  (first evt))]
-    [(note? (second evt)) (play-note job-ctxt (second evt) (first evt))])
-    )
+     (queue-sample job-ctxt evt)]
+    [(note? (second evt))
+     (play-synth job-ctxt
+                 (note-name (second evt))
+                 (first evt)
+                 (note-params (second evt)))]))
+
+;; queue a sample
+(define (queue-sample job-ctxt evt)
+  ; load sample if not already loaded
+  (define s-loaded (sample-loaded? (sample-path (second evt))))
+  (define b-info (if s-loaded
+                     s-loaded
+                     (load-sample job-ctxt (sample-path (second evt)))))
+  ;; set the sample buffer id
+  (define s (resolve-specific-sampler (control-sample (second evt) "buf" (first b-info)) b-info))
+  ;; play the sample
+  (play-synth job-ctxt
+              (sample-name s)
+              (first evt)
+              (sample-params s)))
+
 
 ;; given a job-ctxt and a list of events, queue them all.
 (define (queue-events job-ctxt score)
@@ -87,8 +105,6 @@
 ;; ideal lead time
 (define QUEUE-LEAD 200)
 (define EXPECTED-MAX-SLEEP-LAG 80)
-
-
 
 ;; how long until the event is supposed to happen?
 (define (current-lead event)
@@ -141,6 +157,14 @@
 
 (define (psleep t)
   (pisleep t))
+
+;; control a note or sample
+;; NB: currently broken. doesn't matter until
+;; lsonic allows definition of variables anyway
+(define (control s . args)
+  (cond [(note? s) (control-note s args)]
+        [(sample? s) (control-sample s args)]
+        [else (error 'control "not a note or sample")]))
 
 (define synth note)
 

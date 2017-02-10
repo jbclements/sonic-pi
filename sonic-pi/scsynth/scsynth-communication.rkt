@@ -145,7 +145,7 @@
   (match (synchronized-command/elt ctxt msg)
     [(struct osc-message (#"/b_info" vals))
      vals]
-    [other (error 'query-buffer "internal error querying buffer")]))
+    [other (error 'query-buffer "could not load sample")]))
 
 
 ;; send an element (no wrapping)

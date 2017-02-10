@@ -1,10 +1,8 @@
 #lang s-exp sonic-pi/lsonic
 
-(sample "ambi_lunar_land")
-(sleep 1)
-(synth "beep" 48)
-(sleep 0.5)
-(synth "beep" 36)
-(sample "ambi_drone")
-(sleep 1)
-(synth "beep" 36)
+;; come up with good sample example, then commit
+(sample "loop_amen" "pan" 1)
+(psleep 1.25)
+(sample "loop_amen" "pan" -1)
+(psleep 1.25)
+(sample "ambi_choir" "rate" 0.5)

@@ -14,23 +14,16 @@
          (for-syntax syntax/parse)
          osc
          racket/runtime-path
-         "../sample.rkt"
-         "../note.rkt"
          )
 
 (provide (contract-out
           [startup (-> ctxt?)]
           [start-job (-> ctxt? job-ctxt?)]
-          [play-note (-> job-ctxt? note? inexact-real? void?)]
-          [play-sample (-> job-ctxt? sample? inexact-real? void?)]
-          [load-sample (-> job-ctxt? bytes? (listof number?))]
+          [play-synth (-> job-ctxt? bytes? inexact-real? (listof (listof (or/c bytes? real?))) void?)]
           [end-job (-> job-ctxt? void?)]
-          [rename synchronize/ctxt synchronize (-> ctxt? void?)]))
-
-;; must match definition in note.rkt....
-#;(define note? (cons/c bytes? (listof (list/c bytes? (or/c bytes? real?)))))
-#;(define sample? (cons/c (cons/c bytes? bytes?)
-                        (listof (list/c bytes? (or/c bytes? real?)))))
+          [synchronize/ctxt (-> ctxt? void?)])
+         ctxt-comm
+         job-ctxt-ctxt)
 
 (define-runtime-path here ".")
 (define SYNTHDEF-PATH (build-path here "synthdefs"))
@@ -52,7 +45,6 @@
 
 (define (nonnegative-real? x) (and (real? x) (<= 0 x)))
 (define (note-num? x) (and (real? x) (< 0 x)))
-
 
 ;; don't test this file:
 (module test racket/base)
@@ -98,9 +90,9 @@
   (define recording-group (new-group the-comm 'after mixer-group))
   (define mixer (new-synth the-comm #"sonic-pi-mixer" 'head mixer-group
                            #"in_bus" 10))
-  #;(send-command/elt the-comm `#s(osc-message #"/n_set"
+  (send-command/elt the-comm `#s(osc-message #"/n_set"
                                              (,mixer #"invert_stereo" 0.0)))
-  #;(send-command/elt the-comm `#s(osc-message #"/n_set"
+  (send-command/elt the-comm `#s(osc-message #"/n_set"
                                              (,mixer #"force_mono" 0.0)))
   (synchronize the-comm)
   (ctxt the-comm mixer-group synth-group-group))
@@ -115,7 +107,6 @@
              [else (log-sonic-pi-debug (string-append "[scsynth-stdout] " next-line))
                    (loop)])))))
 
-
 ;; create a fresh node id.
 (define fresh-node-id!
   ;; each node must have a unique ID.
@@ -127,15 +118,6 @@
              (sub1 (unbox node-id))]
             [else (error 'node-id "current node id too large: ~v\n"
                          (unbox node-id))]))))
-
-;; create a new buffer id
-(define fresh-buffer-id!
-  (let ([buff-id (box 2)])
-    (λ ()
-      (cond [(int32? (unbox buff-id))
-             (set-box! buff-id (add1 (unbox buff-id)))
-             (sub1 (unbox buff-id))]
-            [else (error 'buff-id "ran out of buffer space")]))))
 
 ;; given the comm, a placement command, and a node ID,
 ;; create a new group in the specified location.
@@ -160,18 +142,6 @@
      (list synthdef-name new-node-id command-num relative-to)
      args)))
   new-node-id)
-
-;; load a sample into a buffer
-(define (load-sample job-ctxt sname)
-  (define buff-id (fresh-buffer-id!))
-  (define the-comm (ctxt-comm (job-ctxt-ctxt job-ctxt)))
-  (send-command/elt
-   the-comm
-   (osc-message
-    #"/b_allocRead"
-    (append (list buff-id sname 0 0))))
-  (synchronize the-comm)
-  (query-buffer the-comm buff-id))
 
 ;; convert a placement command symbol to the corresponding number
 ;; (defined in the scsynth API)
@@ -199,39 +169,18 @@
                  [else (milliseconds->osc-date time)])
                (list (osc-message address args)))))
 
-;; play the given note-num at the given time (inexact milliseconds) by
-;; adding a synth to the (job?) synth group
-(define (play-note job-ctxt note time)
+;; play a synth (note or sample) at the given time
+(define (play-synth job-ctxt name time params)
   (apply
    send-bundled-message
    (ctxt-comm (job-ctxt-ctxt job-ctxt))
    time
    #"/s_new"
-   (note-name note)
+   name
    (fresh-node-id!)
-   0
-   (job-ctxt-synth-group job-ctxt)
-   (apply append (note-params note))))
-
-;; play a given sample at the given time
-(define (play-sample job-ctxt sample time)
-  ;(printf "playing sample with buf id ~v\n\n" (car (first sample)))
-  (apply
-   send-bundled-message
-   (ctxt-comm (job-ctxt-ctxt job-ctxt))
-   time
-   #"/s_new"
-   ; sample_name
-   (Sample-name sample)
-   ; buff-id
-   (fresh-node-id!)
-   ; pos_code
    (placement-command->number 'head)
-   ; group_id
    (job-ctxt-synth-group job-ctxt)
-   ; args
-   (apply append (Sample-params sample))
-   ))
+   (apply append params)))
 
 ;; start a job. I don't even know what a job is!
 (define (start-job the-ctxt)
@@ -280,7 +229,10 @@
   (require "../note.rkt")
   (define ctxt (startup))
   (define job-ctxt (start-job ctxt))
-  (play-note job-ctxt (note "beep" 100)
-             (+ 500 (current-inexact-milliseconds)))
+  (define n (note "beep" 100))
+  (play-synth job-ctxt
+              (note-name n)
+              (+ 500 (current-inexact-milliseconds))
+              (note-params n))
   (sleep 5)
   (end-job job-ctxt))

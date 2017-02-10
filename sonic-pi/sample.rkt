@@ -5,29 +5,27 @@
          racket/list)
 
 (provide sample
-         Sample
-         Sample-name
-         Sample-path
-         Sample-params
+         sample-name
+         sample-path
+         sample-params
          sample?
-         control-sample)
+         control-sample
+         resolve-specific-sampler)
 
 ;; parameters can be either byte-strings or real numbers
 (define-type ParamVal (U Bytes Real))
-
 (define-type ParamField (List Bytes ParamVal))
 (define-type ParamAssoc (Listof ParamField))
 
 ;; a sample has a distinguished name,
 ;; an absolute path, then other params
 (define-struct Sample ([name : Bytes] [path : Bytes] [params : ParamAssoc]) #:transparent)
-#;(define-type Sample (Pairof (Pairof Bytes Bytes) ParamAssoc))
 
-;; the problem with this is that a note is of the same type
-;; so we need a way to distinguish notes and samples
-#;(define-predicate sample? Sample)
-
+;; rename 
 (define sample? Sample?)
+(define sample-name Sample-name)
+(define sample-path Sample-path)
+(define sample-params Sample-params)
 
 ;; default values for a sample
 ;; commented out values either need to be calculated,
@@ -72,22 +70,23 @@
 ;; an alist mapping all required parameters to either default
 ;; or specified values.
 ;; NB: should we check for dups? Or for bogus fields?
-(: complete-field-list (ParamAssoc -> ParamAssoc))
-(define (complete-field-list alist)
-  (for/list ([pr (in-list default-vals)])
-    (match-define (list field-name default-val) pr)
+(: complete-field-list (ParamAssoc  ParamAssoc -> ParamAssoc))
+(define (complete-field-list alist thelist)
+  (for/list ([pr (in-list thelist)])
+    (match-define (list field-name thelist) pr)
     (match (assoc field-name alist)
       [(list _ new-val) (list field-name new-val)]
-      [#f (list field-name default-val)])))
+      [#f (list field-name thelist)])))
 
-;; for now a sample can only be identified by it's name
-;; TODO: resolve_specific_sampler
+;; create a sample given only the name/path and arguments
+;; default to basic_stereo_player but set the correct one
+;; once it is loaded
 (: sample (String (U String Real) * -> Sample))
 (define (sample name . param-parts)
   (define other-params (group-params param-parts))
-  (Sample (string->bytes/utf-8 (string-append "sonic-pi-" "basic_stereo_player"))
+  (Sample #"sonic-pi-basic_stereo_player"
           (string->bytes/utf-8 (resolve-path name))
-          (complete-field-list other-params)))
+          (complete-field-list other-params default-vals)))
 
 ;; resolve the path for a sample
 ;; for now the path is relative for Unix
@@ -99,12 +98,29 @@
        (build-path (current-directory)
                    (string-append "samples/" path ".flac")))))
 
+;; resolve the specific sampler that is used
+;; interesting note: sonic-pi handles the sampler
+;; based on basic or complex arguments but, since
+;; we pass all the arguments, I'm going to use
+;; the complex sampler for all of them. bad choice?
+(: resolve-specific-sampler (Sample (Listof Real) -> Sample))
+(define (resolve-specific-sampler s b-info)
+  (Sample (num-chans->sampler (third b-info))
+          (sample-path s)
+          (sample-params s)))
+
+;; gets the appropriate mixer for the number of channels
+(define (num-chans->sampler num-chans)
+  (match num-chans
+    [1 #"sonic-pi-mono_player"]
+    [2 #"sonic-pi-stereo_player"]))
+
 ;; control a sample's arguments
 (: control-sample (Sample (U String Real) * -> Sample))
 (define (control-sample s . param-parts)
   (Sample (Sample-name s)
           (Sample-path s)
-          (set-params (Sample-params s) (group-params param-parts))))
+          (complete-field-list (group-params param-parts) (Sample-params s))))
 
 ;; sets new parameters for a sample
 (: set-params (ParamAssoc ParamAssoc -> ParamAssoc))
@@ -145,10 +161,10 @@
                   (#"y" 0.421)
                   (#"z" #"blue")))
   
-  (check-equal? (complete-field-list '())
+  (check-equal? (complete-field-list '() default-vals)
                 default-vals)
 
-  (check-equal? (complete-field-list '((#"amp" 0.5)))
+  (check-equal? (complete-field-list '((#"amp" 0.5)) default-vals)
                 '((#"buf" 0)
                   (#"amp" 0.5)
                   (#"amp_slide" 0)
@@ -175,11 +191,11 @@
                   (#"hpf_slide_shape" 1)
                   (#"hpf_slide_curve" 0)
                   (#"rate" 1)
-                  (#"out_bus" 12)
-                  ))
+                  (#"out_bus" 12)))
 
   (check-equal? (complete-field-list '((#"amp" 0.5)
-                                       (#"pan" 1)))
+                                       (#"pan" 1))
+                                     default-vals)
                 '((#"buf" 0)
                   (#"amp" 0.5)
                   (#"amp_slide" 0)
@@ -211,8 +227,8 @@
 
   (check-equal? (sample "ambi_choir")
                 (Sample #"sonic-pi-basic_stereo_player"
-                  (string->bytes/utf-8
-                   (path->string
+                   (string->bytes/utf-8
+                    (path->string
                     (build-path (current-directory)
                                 (string-append "samples/" "ambi_choir" ".flac"))))
                   '((#"buf" 0)
@@ -246,8 +262,8 @@
 
   (check-equal? (sample "ambi_choir" "attack" 1)
                 (Sample #"sonic-pi-basic_stereo_player"
-                  (string->bytes/utf-8
-                   (path->string
+                   (string->bytes/utf-8
+                    (path->string
                     (build-path (current-directory)
                                 (string-append "samples/" "ambi_choir" ".flac"))))
                   '((#"buf" 0)
@@ -281,8 +297,8 @@
   (check-equal? (control-sample (sample "ambi_choir")
                                 "buf" 2 "out_bus" 10)
                 (Sample #"sonic-pi-basic_stereo_player"
-                  (string->bytes/utf-8
-                   (path->string
+                   (string->bytes/utf-8
+                    (path->string
                     (build-path (current-directory)
                                 (string-append "samples/" "ambi_choir" ".flac"))))
                   '((#"buf" 2)

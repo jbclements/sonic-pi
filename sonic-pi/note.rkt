@@ -5,7 +5,8 @@
 (provide note
          note?
          note-name
-         note-params)
+         note-params
+         control-note)
 
 ;; parameters can be either byte-strings or real numbers
 (define-type ParamVal (U Bytes Real))
@@ -51,20 +52,20 @@
 ;; an alist mapping all required parameters to either default
 ;; or specified values.
 ;; NB: should we check for dups? Or for bogus fields?
-(: complete-field-list (ParamAssoc -> ParamAssoc))
-(define (complete-field-list alist)
-  (for/list ([pr (in-list default-vals)])
-    (match-define (list field-name default-val) pr)
+(: complete-field-list (ParamAssoc ParamAssoc -> ParamAssoc))
+(define (complete-field-list alist thelist)
+  (for/list ([pr (in-list thelist)])
+    (match-define (list field-name thelist) pr)
     (match (assoc field-name alist)
       [(list _ new-val) (list field-name new-val)]
-      [#f (list field-name default-val)])))
+      [#f (list field-name thelist)])))
 
 (: note (String Real (U String Real) * -> Note))
 (define (note synth midi-pitch . param-parts)
   (define other-params (group-params param-parts))
   (Note (bytes-append #"sonic-pi-" (string->bytes/utf-8 synth))
         (cons (list #"note" (ann midi-pitch ParamVal))
-              (complete-field-list other-params))))
+              (complete-field-list other-params default-vals))))
 
 ;; turn an interleaved list of names and values into a
 ;; paramassoc (also changing strings into byte-strings as we go)
@@ -90,16 +91,7 @@
 (: control-note (Note (U String Real) * -> Note))
 (define (control-note n . param-parts)
   (Note (Note-name n)
-        (set-params (Note-params n) (group-params param-parts))))
-
-;; sets the parameters for a note
-(: set-params (ParamAssoc ParamAssoc -> ParamAssoc))
-(define (set-params orig new)
-  (for/list ([pr (in-list orig)])
-    (match-define (list field-name default-val) pr)
-    (match (assoc field-name new)
-      [(list _ new-val) (list field-name new-val)]
-      [#f (list field-name default-val)])))
+        (complete-field-list (group-params param-parts) (Note-params n))))
 
 (module+ test
   (require typed/rackunit)
@@ -114,10 +106,10 @@
                   (#"y" 0.421)
                   (#"z" #"blue")))
   
-  (check-equal? (complete-field-list '())
+  (check-equal? (complete-field-list '() default-vals)
                 default-vals)
 
-  (check-equal? (complete-field-list '((#"amp" 0.5)))
+  (check-equal? (complete-field-list '((#"amp" 0.5)) default-vals)
                 '((#"note_slide" 0)
                   (#"note_slide_shape" 5)
                   (#"node_slide_curve" 0)
@@ -138,7 +130,8 @@
                   (#"out_bus" 12.0)))
 
   (check-equal? (complete-field-list '((#"amp" 0.5)
-                                       (#"note_slide" 3)))
+                                       (#"note_slide" 3))
+                                     default-vals)
                 '((#"note_slide" 3)
                   (#"note_slide_shape" 5)
                   (#"node_slide_curve" 0)
