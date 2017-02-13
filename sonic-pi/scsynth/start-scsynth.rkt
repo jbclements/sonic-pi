@@ -17,7 +17,7 @@
 (define-runtime-path here ".")
 (define SCSYNTH-PATH-MAC (build-path here "scsynth"))
 ;; currently broken
-(define SCSYNTH-PATH-WIN (build-path "C" "Program Files" "SuperCollider-3.8.0" "scsynth.exe"))
+(define SCSYNTH-PATH-WIN (build-path "C://Program Files//SuperCollider-3.8.0//scsynth.exe"))
 
 ;; honestly, all of this machinery is a bit silly.
 (define rng (vector->pseudo-random-generator
@@ -82,7 +82,7 @@
          (display next-line)
          (newline)
          (cond [(eof-object? next-line) 'process-done]
-               [(equal? next-line SUCCESSFUL-START-LINE)
+               [(equal? (string-trim next-line) SUCCESSFUL-START-LINE)
                 (channel-put startup-status 'server-up)]
                [else (loop)])))))
   
@@ -94,7 +94,9 @@
                   (list 'exit-code (control-proc 'exit-code)))))
   
   (match (sync/timeout STARTUP-WAIT startup-status)
-    [#f (error 'server-startup
+    [#f
+     (printf "startup status: ~v" startup-status)
+     (error 'server-startup
                "server startup timed out. Perhaps the success message has changed?")]
     [(list 'exit-code 1)
      ;; wait for the rest of the output to arrive
@@ -115,7 +117,6 @@
      (list udp-port
            (reverse lines-of-output)
            from-port
-           ;TODO: redefine this to shutdown-scsynth
            (λ () (control-proc 'kill)))]
     [other
      (error 'server-startup
@@ -154,7 +155,10 @@
 ;; the ports remain in use and jack hijacks your audio
 ;; for all other programs
 (define (shutdown-scsynth)
-  (when (equal? (system-type) 'unix)
+  (match (system-type)
+    ['unix (process "killall -9 jackd")]
+    ['windows (process "Taskkill /IM scsynth.exe /F")])
+  #;(when (equal? (system-type) 'unix)
       (process "killall -9 jackd"))
   (void))
 

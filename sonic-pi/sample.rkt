@@ -96,7 +96,8 @@
       path
       (path->string
        (build-path (current-directory)
-                   (string-append "samples/" path ".wav")))))
+                   "samples"
+                   (string-append path ".wav")))))
 
 ;; resolve the specific sampler that is used
 ;; interesting note: sonic-pi handles the sampler

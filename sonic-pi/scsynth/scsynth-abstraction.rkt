@@ -76,7 +76,10 @@
                                         (path->string SYNTHDEF-PATH)))
   (synchronize the-comm)
   ;; sonic-pi reads in rand-stream.wav buffer, so i will too
-  (send-command the-comm #"/b_allocRead" 0 (string->bytes/utf-8 "/usr/share/sonic-pi/buffers/rand-stream.wav") 0 0)
+  
+  (send-command the-comm #"/b_allocRead" 0
+                (string->bytes/utf-8 (path->string
+                                      (build-path here "buffers" "rand-stream.wav"))) 0 0)
   (synchronize the-comm)
   (send-command the-comm #"/clearSched")
   (send-command the-comm #"/g_freeAll" 0)
