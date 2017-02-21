@@ -11,6 +11,8 @@
 ;; and an 'fx' group, even though there aren't any recording or FX mechanisms.
 
 (require "scsynth-communication.rkt"
+         "../allocator.rkt"
+         "../fx.rkt"
          (for-syntax syntax/parse)
          osc
          racket/runtime-path
@@ -21,7 +23,8 @@
           [start-job (-> ctxt? job-ctxt?)]
           [play-synth (-> job-ctxt? bytes? inexact-real? (listof (listof (or/c bytes? real?))) void?)]
           [end-job (-> job-ctxt? void?)]
-          [synchronize/ctxt (-> ctxt? void?)])
+          [synchronize/ctxt (-> ctxt? void?)]
+          [trigger-fx (-> ctxt? fx? void?)])
          ctxt-comm
          job-ctxt-ctxt)
 
@@ -35,7 +38,7 @@
 ;; this represents the context of a running sonic pi graph, containing
 ;; the 'comm' structure, the group of the mixers and the group of the
 ;; synth groups
-(define-struct ctxt (comm mixer-group synth-group-group) #:transparent)
+(define-struct ctxt (comm mixer-group synth-group-group fx-group) #:transparent)
 ;; this represents the context of a single job, containing a ctxt,
 ;; the job-specific mixer, and the job-specific synth-group
 (define-struct job-ctxt (ctxt mixer synth-group) #:transparent)
@@ -89,6 +92,7 @@
   ;; above. Curiously, scsynth's deepFree doesn't free nested groups.
   (define mixer-group (new-group the-comm 'head ROOT-GROUP))
   (define fx-group (new-group the-comm 'before mixer-group))
+  (define fx-group-group (new-group the-comm 'tail fx-group))
   (define synth-group-group (new-group the-comm 'before fx-group))
   (define recording-group (new-group the-comm 'after mixer-group))
   (define mixer (new-synth the-comm #"sonic-pi-mixer" 'head mixer-group
@@ -98,7 +102,7 @@
   (send-command/elt the-comm `#s(osc-message #"/n_set"
                                              (,mixer #"force_mono" 0.0)))
   (synchronize the-comm)
-  (ctxt the-comm mixer-group synth-group-group))
+  (ctxt the-comm mixer-group synth-group-group fx-group-group))
 
 ;; read lines from input port, log to debug. Stop when we get #<eof>.
 (define (start-logging-thread server-stdout)
@@ -110,18 +114,6 @@
              [else (log-sonic-pi-debug (string-append "[scsynth-stdout] " next-line))
                    (loop)])))))
 
-;; create a fresh node id.
-(define fresh-node-id!
-  ;; each node must have a unique ID.
-  ;; Worrying about overflow is probably silly....
-  (let ([node-id (box 2)])
-    (λ ()
-      (cond [(int32? (unbox node-id))
-             (set-box! node-id (add1 (unbox node-id)))
-             (sub1 (unbox node-id))]
-            [else (error 'node-id "current node id too large: ~v\n"
-                         (unbox node-id))]))))
-
 ;; given the comm, a placement command, and a node ID,
 ;; create a new group in the specified location.
 ;; return the new ID
@@ -130,6 +122,27 @@
   (define command-num
     (placement-command->number placement-command))
   (send-command comm #"/g_new" new-node-id command-num relative-to)
+  new-node-id)
+
+;; trigger a new fx
+(define (trigger-fx ctxt f)
+  (define ng (new-group (ctxt-comm ctxt) 'head (ctxt-fx-group ctxt)))
+  ;; send new synth
+  (new-fx-synth (ctxt-comm ctxt)
+             (fx-name f)
+             'head
+             (ctxt-fx-group ctxt)
+             (flatten (fx-params f)))
+  (void))
+
+(define (new-fx-synth comm synthdef-name placement-command relative-to params)
+  (define new-node-id (fresh-node-id!))
+  (define command-num (placement-command->number placement-command))
+  (send-command/elt
+   comm
+   (osc-message
+    #"/s_new"
+    (list* synthdef-name new-node-id command-num relative-to params)))
   new-node-id)
 
 ;; create a new synth node, using the given name, placement-command,
@@ -187,7 +200,7 @@
 
 ;; start a job. I don't even know what a job is!
 (define (start-job the-ctxt)
-  (match-define (struct ctxt (comm mixer-group synth-group-group)) the-ctxt)
+  (match-define (struct ctxt (comm mixer-group synth-group-group fx-group)) the-ctxt)
   (define job-synth-group (new-group comm 'tail synth-group-group))
   ;; see note at beginning about params here, all borrowed from Sonic PI.
   (define job-mixer
@@ -215,7 +228,7 @@
 ;; its associated synths
 (define (end-job the-job-ctxt)
   (match-define (struct job-ctxt
-                  ((struct ctxt (comm _1 _2)) job-mixer job-synth-group))
+                  ((struct ctxt (comm _1 _2 _3)) job-mixer job-synth-group))
     the-job-ctxt)
   (send-command comm #"/n_set" job-mixer #"amp_slide" 1.0)
   (send-command comm #"/n_set" job-mixer #"amp" 0.0)

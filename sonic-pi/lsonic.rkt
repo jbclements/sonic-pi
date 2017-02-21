@@ -2,22 +2,24 @@
 
 ;; Copyright 2015-2016 John Clements (clements@racket-lang.org)
 ;; released under Mozilla Public License 2.0
+(require
+  "scsynth/scsynth-abstraction.rkt"
+  "note.rkt"
+  "sample.rkt"
+  "fx.rkt"
+  "sample-loader.rkt"
+  "allocator.rkt"
+  (for-syntax syntax/parse)
+  rackunit)
 
 (provide (except-out (all-from-out racket) sleep #%module-begin)
          (rename-out [my-module-begin #%module-begin]
                      [psleep sleep])
          synth
          sample
+         fx
          psleep
          control)
-
-(require
-  "scsynth/scsynth-abstraction.rkt"
-  "note.rkt"
-  "sample.rkt"
-  "sample-loader.rkt"
-  (for-syntax syntax/parse)
-  rackunit)
 
 ;; all kinds of interesting interface questions here. Implicit sequence
 ;; wrapped around the whole thing? Implicit parallelism for loops next to
@@ -53,7 +55,19 @@
      (play-synth job-ctxt
                  (note-name (second evt))
                  (first evt)
-                 (note-params (second evt)))]))
+                 (note-params (control-note (second evt) "out_bus" (current-outbus))))]
+    [(fx? (second evt))
+     (define out-bus (current-outbus))
+     (define in-bus (fresh-bus-id))
+     (set-current-outbus in-bus)
+     (trigger-fx (job-ctxt-ctxt job-ctxt) (set-fx-busses (second evt) in-bus out-bus))
+     (queue-block job-ctxt (second evt) in-bus)
+     (set-current-outbus out-bus)]))
+
+;; queue a block from fx with a new out_bus
+(define (queue-block job-ctxt f new-out-bus)
+  (map (λ (s) (queue-event job-ctxt s))
+         (stream->list (fx-score f))))
 
 ;; queue a sample
 (define (queue-sample job-ctxt evt)
@@ -63,7 +77,7 @@
                      s-loaded
                      (load-sample job-ctxt (sample-path (second evt)))))
   ;; set the sample buffer id
-  (define s (resolve-specific-sampler (control-sample (second evt) "buf" (first b-info)) b-info))
+  (define s (resolve-specific-sampler (control-sample (second evt) "buf" (first b-info) "out_bus" (current-outbus)) b-info))
   ;; play the sample
   (play-synth job-ctxt
               (sample-name s)
@@ -121,7 +135,7 @@
 ;; given a user score and a virtual time, produce a score associating
 ;; a time with each note.
 ;; DANGER: loop with only sleep can lead to spaz-out...
-(define (uscore->score uscore vtime)
+(define (uscore->score uscore vtime [in_bus 14] [out_bus 12])
   (cond [(empty? uscore) empty-stream]
         [else (cond [(pisleep? (first uscore))
                      (uscore->score (rest uscore)
@@ -136,6 +150,13 @@
                      (stream-cons (list vtime (first uscore))
                                   (uscore->score (rest uscore)
                                                  vtime))]
+                    [(fx? (first uscore))
+                     (define fx-block (uscore->score (fx-score (first uscore))
+                                                     vtime))
+                     (define new_vtime (first (last (stream->list fx-block))))
+                     (stream-cons (list vtime (set-score (first uscore) fx-block))
+                                  (uscore->score (rest uscore) new_vtime)
+                                  )]
                     
                     [else (raise-argument-error 'uscore->score
                                                 "list of notes and sleeps"
@@ -164,6 +185,7 @@
 (define (control s . args)
   (cond [(note? s) (control-note s args)]
         [(sample? s) (control-sample s args)]
+        [(fx? s) (control-fx s args)]
         [else (error 'control "not a note or sample")]))
 
 (define synth note)
@@ -206,4 +228,26 @@
                     2000))
                   (list (list 2000 (synth "beep" 60))
                         (list 6000 (synth "beep" 66))
-                        (list 6000 (synth "beep" 69)))))))
+                        (list 6000 (synth "beep" 69))))
+    ;; man this test sure got complicated...
+    ;; because of stream not being transparent, I extracted
+    ;; the fx, then the score from that fx, and turned that
+    ;; into a list and checked it
+    (check-equal? (stream->list
+                   (fx-score
+                    (second (second
+                     (stream->list
+                      (uscore->score
+                       (list (synth "beep" 60)
+                             (psleep 4)
+                             (fx "reverb"
+                                 (list (synth "beep" 60)
+                                       (psleep 4)
+                                       (sample "elec_blip")
+                                       (psleep 4)
+                                       (synth "beep" 60))))
+                       2000))))))
+                  (list (list 6000 (synth "beep" 60))
+                        (list 10000 (sample "elec_blip"))
+                        (list 14000 (synth "beep" 60))))
+    )))

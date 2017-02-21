@@ -158,8 +158,6 @@
   (match (system-type)
     ['unix (process "killall -9 jackd")]
     ['windows (process "Taskkill /IM scsynth.exe /F")])
-  #;(when (equal? (system-type) 'unix)
-      (process "killall -9 jackd"))
   (void))
 
 (module+ test

@@ -2,7 +2,8 @@
 
 (require racket/match
          racket/path
-         racket/list)
+         racket/list
+         "util.rkt")
 
 (provide sample
          sample-name
@@ -11,11 +12,6 @@
          sample?
          control-sample
          resolve-specific-sampler)
-
-;; parameters can be either byte-strings or real numbers
-(define-type ParamVal (U Bytes Real))
-(define-type ParamField (List Bytes ParamVal))
-(define-type ParamAssoc (Listof ParamField))
 
 ;; a sample has a distinguished name,
 ;; an absolute path, then other params
@@ -28,9 +24,6 @@
 (define sample-params Sample-params)
 
 ;; default values for a sample
-;; commented out values either need to be calculated,
-;; have unknown defaults. they will likely be used in the
-;; future.
 (: default-vals ParamAssoc)
 (define default-vals
   (map
@@ -65,18 +58,6 @@
      (rate 1)
      (out_bus 12)
    )))
-
-;; given an association list of specified fields, return
-;; an alist mapping all required parameters to either default
-;; or specified values.
-;; NB: should we check for dups? Or for bogus fields?
-(: complete-field-list (ParamAssoc  ParamAssoc -> ParamAssoc))
-(define (complete-field-list alist thelist)
-  (for/list ([pr (in-list thelist)])
-    (match-define (list field-name thelist) pr)
-    (match (assoc field-name alist)
-      [(list _ new-val) (list field-name new-val)]
-      [#f (list field-name thelist)])))
 
 ;; create a sample given only the name/path and arguments
 ;; default to basic_stereo_player but set the correct one
@@ -122,33 +103,6 @@
   (Sample (Sample-name s)
           (Sample-path s)
           (complete-field-list (group-params param-parts) (Sample-params s))))
-
-;; sets new parameters for a sample
-(: set-params (ParamAssoc ParamAssoc -> ParamAssoc))
-(define (set-params orig new)
-  (for/list ([pr (in-list orig)])
-    (match-define (list field-name default-val) pr)
-    (match (assoc field-name new)
-      [(list _ new-val) (list field-name new-val)]
-      [#f (list field-name default-val)])))
-
-;; turn an interleaved list of names and values into a
-;; paramassoc (also changing strings into byte-strings as we go)
-(: group-params ((Listof (U String Real)) -> ParamAssoc))
-(define (group-params param-parts)
-  (match param-parts
-    [(cons (? string? name) (cons val rst))
-     (cons (list (string->bytes/utf-8 name)
-                 (cond [(string? val) (string->bytes/utf-8 val)]
-                       [else val]))
-           (group-params rst))]
-    ['() '()]
-    [(cons non-string (cons val rst))
-     (error 'group-params "expected field name (string), got ~e"
-            non-string)]
-    [(cons leftover '())
-     (error 'group-params "leftover value in params: ~e"
-            leftover)]))
 
 (module+ test
   (require typed/rackunit)

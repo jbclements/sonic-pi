@@ -12,7 +12,8 @@
          racket/async-channel
          racket/system
          osc
-         "start-scsynth.rkt")
+         "start-scsynth.rkt"
+         "../allocator.rkt")
 
 (provide
  (contract-out [comm-open (-> (list/c comm? input-port?))]
@@ -116,7 +117,7 @@
        (define received (subbytes receive-buffer 0 len))
        ;(printf "received buffer: ~v\n" received)
        (define decoded (bytes->osc-element received))
-       (printf "decoded: ~e\n" decoded)
+       ;(printf "decoded: ~e\n" decoded)
        (flatten-into-queue incoming-messages decoded)
        (loop)))))
 
@@ -163,11 +164,7 @@
     [msg msg]))
 
 
-;; each sync command should use a unique # per connection
-(define SYNC-ID (box 23))
-(define (fresh-sync-id)
-  (set-box! SYNC-ID (add1 (unbox SYNC-ID)))
-  (sub1 (unbox SYNC-ID)))
+
 
 ;; discard messages until you get one that matches the
 ;; predicate. Don't wait longer than SERVER-TIMEOUT
