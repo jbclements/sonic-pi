@@ -54,7 +54,7 @@
 (define (fx name . param-parts)
   (define other-params (group-params (drop-last param-parts)))
   (Fx (string->bytes/utf-8 (string-append "sonic-pi-fx_" name))
-      (complete-field-list other-params default-vals)
+      (merge-field-list other-params default-vals)
       (last param-parts)))
 
 ;; set the list of notes/samples/pisleep

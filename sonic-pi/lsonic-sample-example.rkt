@@ -11,7 +11,7 @@
 
 ;; bitcrusher really messes up the sound so you can
 ;; be sure the effect was applied
-(fx "bitcrusher"
+(fx "bitcrusher" "bits_slide_shape" 3 "bits" 2
   (list
    (synth "beep" 60)
    (psleep 0.5)
@@ -24,7 +24,7 @@
 ;; nested fx works too!
 (fx "echo"
  (list
- (fx "bitcrusher"
+ (fx "bitcrusher" "bits_slide_shape" 3 "bits" 2
   (list
    (synth "beep" 60)
    (psleep 0.5)
