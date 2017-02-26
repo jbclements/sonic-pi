@@ -79,8 +79,8 @@
        (let loop ()
          (define next-line (read-line from-port))
          (set! lines-of-output (cons next-line lines-of-output))
-         (display next-line)
-         (newline)
+         ;(display next-line)
+         ;(newline)
          (cond [(eof-object? next-line) 'process-done]
                [(equal? (string-trim next-line) SUCCESSFUL-START-LINE)
                 (channel-put startup-status 'server-up)]

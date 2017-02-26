@@ -25,7 +25,8 @@
     #"/b_allocRead"
     (append (list buff-id spath 0 0))))
   ; sync
-  (synchronize the-comm)
+  (wait-for-buffer the-comm)
+  ;(synchronize the-comm)
   ; verify buffer load was a success
   (define b-info (query-buffer the-comm buff-id))
   ; add buffer-info to the hash
