@@ -10,22 +10,22 @@
          fx
          fx-name
          fx-params
-         fx-score
+         fx-block
          set-fx-busses
-         set-score
+         set-block
          control-fx)
 
 ;; an fx structure contains a name, arguments,
 ;; and a list of (sample or note or sleep)
 ;; need to define pisleep so fx can use it
 (struct pisleep (duration) #:prefab)
-(define-struct Fx (name params score) #:transparent)
+(define-struct Fx (name params block) #:transparent)
 
 ;; rename 
 (define fx? Fx?)
 (define fx-name Fx-name)
 (define fx-params Fx-params)
-(define fx-score Fx-score)
+(define fx-block Fx-block)
 
 
 
@@ -59,22 +59,22 @@
 
 ;; set the list of notes/samples/pisleep
 ;; to a list of scores
-(define (set-score f score)
+(define (set-block f  block)
   (Fx (fx-name f)
       (fx-params f)
-      score))
+       block))
 
 ;; set an fx's in_bus and out_bus
 (define (set-fx-busses f in_bus out_bus)
   (Fx (fx-name f)
       (complete-field-list (group-params (list "in_bus" in_bus "out_bus" out_bus)) (Fx-params f))
-      (fx-score f)))
+      (fx-block f)))
 
 ;; control a sound fx's arguments
 (define (control-fx f . param-parts)
   (Fx (Fx-name f)
       (complete-field-list (group-params param-parts) (Fx-params f))
-      (Fx-score f)))
+      (Fx-block f)))
 
 
 ;; drop the last element in a list

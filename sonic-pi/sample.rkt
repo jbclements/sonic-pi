@@ -1,7 +1,7 @@
 #lang typed/racket/base
 
-(require racket/match
-         racket/path
+(require racket/match         
+         racket/path         
          racket/list
          "util.rkt")
 
@@ -76,7 +76,7 @@
   (if (complete-path? path)
       path
       (path->string
-       (build-path (current-directory)
+       (build-path (root-dir)
                    "samples"
                    (string-append path ".wav")))))
 
@@ -185,7 +185,7 @@
                    (string->bytes/utf-8
                     (path->string
                     (build-path (current-directory)
-                                (string-append "samples/" "ambi_choir" ".flac"))))
+                                (string-append "samples/" "ambi_choir" ".wav"))))
                   '((#"buf" 0)
                   (#"amp" 1)
                   (#"amp_slide" 0)
@@ -220,7 +220,7 @@
                    (string->bytes/utf-8
                     (path->string
                     (build-path (current-directory)
-                                (string-append "samples/" "ambi_choir" ".flac"))))
+                                (string-append "samples/" "ambi_choir" ".wav"))))
                   '((#"buf" 0)
                   (#"amp" 1)
                   (#"amp_slide" 0)
@@ -255,7 +255,7 @@
                    (string->bytes/utf-8
                     (path->string
                     (build-path (current-directory)
-                                (string-append "samples/" "ambi_choir" ".flac"))))
+                                (string-append "samples/" "ambi_choir" ".wav"))))
                   '((#"buf" 2)
                   (#"amp" 1)
                   (#"amp_slide" 0)

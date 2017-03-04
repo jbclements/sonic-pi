@@ -2,9 +2,12 @@
 
 (require racket/match
          racket/list)
+(require/typed setup/dirs
+               [find-user-pkgs-dir (-> Path)])
 (provide complete-field-list
          merge-field-list
          group-params
+         root-dir
          ParamVal
          ParamField
          ParamAssoc)
@@ -12,7 +15,11 @@
 
 ;; for now this is just a file for functions that
 ;; are used by multiple modules
-
+(: root-dir (-> Path))
+(define (root-dir)
+  (build-path (find-user-pkgs-dir)
+              "sonic-pi"
+              "sonic-pi"))
 
 ;; parameters can be either byte-strings or real numbers
 (define-type ParamVal (U Bytes Real))

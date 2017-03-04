@@ -11,6 +11,7 @@
          racket/udp
          racket/async-channel
          racket/system
+         setup/dirs
          osc
          "start-scsynth.rkt"
          "../allocator.rkt")
@@ -25,7 +26,8 @@
                                           osc-message?)]
                [shutdown-scsynth (-> void)]
                [query-buffer (-> comm? number? any/c)]
-               [wait-for-buffer (-> comm? void?)])
+               [wait-for-buffer (-> comm? void?)]
+               )
  comm?)
 
 ;; a comm structure represents information necessary to communicate
@@ -153,7 +155,7 @@
 ;; send an element (no wrapping)
 (define (send-command/elt ctxt msg)
   ;; NB: THIS CAN BLOCK:
-  (printf "sending: ~v\n" msg)
+  ;(printf "sending: ~v\n" msg)
   (udp-send (comm-socket ctxt) (osc-element->bytes msg)))
 
 ;; get a message (but don't wait longer than SERVER-TIMEOUT
