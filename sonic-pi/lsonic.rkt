@@ -18,6 +18,7 @@
          synth
          sample
          fx
+         rand
          psleep
          loop
          control)
@@ -192,6 +193,12 @@
                      (uscore->score (append
                                      (Loop-block (first uscore))
                                      (rest uscore)))]
+                    [(Rand? (first uscore))
+                     (stream-cons (list
+                                   (current-vtime)
+                                   (list-ref (Rand-block (first uscore))
+                                             (random (length (Rand-block (first uscore))))))
+                                  (uscore->score (rest uscore)))]
                     [(fx? (first uscore))
                      (define f-block (uscore->score (fx-block (first uscore))))
                      (stream-cons (list (current-vtime) (set-block (first uscore) f-block))
@@ -224,6 +231,7 @@
 
 (struct pisleep (duration) #:prefab)
 (struct Loop (reps block))
+(struct Rand (block))
 
 (define (psleep t)
   (pisleep t))
@@ -251,6 +259,10 @@
   (cond
     [(zero? reps) empty]
     [else (append block (repeat-block block (sub1 reps)))]))
+
+;; define a random object
+(define (rand block)
+  (Rand block))
 
 (define synth note)
 
