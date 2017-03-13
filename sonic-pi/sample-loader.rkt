@@ -8,8 +8,10 @@
          osc)
 
 (provide load-sample
+         load-samples
          sample-loaded?)
 
+;; store buffer information in a hash
 (define sample-buffer (make-hash))
 
 ;; load a sample into a buffer, then save the
@@ -38,13 +40,13 @@
 (define (sample-loaded? spath)
   (hash-ref sample-buffer spath (λ () #false)))
 
-;; load samples
+;; load a list of samples in advance
 (define (load-samples job-ctxt spaths)
   (apply (λ (path) (load-sample job-ctxt path))
          spaths))
 
-
-;; create a new buffer id
+;; creates a new sample buffer id.
+;; works like node ids
 (define fresh-buffer-id!
   (let ([buff-id (box 1)])
     (λ ()

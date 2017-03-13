@@ -44,6 +44,7 @@
      (env_curve 2)
      (out_bus 12.0))))
 
+;; create a note given a synth name, pitch number, and optional parameters
 (: note (String Real (U String Real) * -> Note))
 (define (note synth midi-pitch . param-parts)
   (define other-params (group-params param-parts))
@@ -52,8 +53,6 @@
               (complete-field-list other-params default-vals))))
 
 ;; control a note's parameters
-;; should I maybe consider finding a more efficient way
-;; of doing this?
 (: control-note (Note (U String Real) * -> Note))
 (define (control-note n . param-parts)
   (Note (Note-name n)

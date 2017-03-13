@@ -17,8 +17,6 @@
 
 ;; an fx structure contains a name, arguments,
 ;; and a list of (sample or note or sleep)
-;; need to define pisleep so fx can use it
-(struct pisleep (duration) #:prefab)
 (define-struct Fx (name params block) #:transparent)
 
 ;; rename 
@@ -57,8 +55,7 @@
       (merge-field-list other-params default-vals)
       (last param-parts)))
 
-;; set the list of notes/samples/pisleep
-;; to a list of scores
+;; set the an fx to contain a block
 (define (set-block f  block)
   (Fx (fx-name f)
       (fx-params f)

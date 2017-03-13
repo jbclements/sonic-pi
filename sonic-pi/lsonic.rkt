@@ -21,6 +21,9 @@
          rand
          psleep
          loop
+         block
+         choose
+         rrand
          control)
 
 ;; all kinds of interesting interface questions here. Implicit sequence
@@ -161,7 +164,7 @@
                                      (rest uscore))
                                     vtime)]
                     [(fx? (first uscore))
-                     (define f-block (uscore->score (fx-block (first uscore))
+                     (define f-block (uscore->score ((fx-block (first uscore)))
                                                      vtime))
                      (define new_vtime (first (last (stream->list f-block))))
                      (stream-cons (list vtime (set-block (first uscore) f-block))
@@ -177,7 +180,9 @@
 ;; of action
 (define (uscore->score uscore)
   (cond [(empty? uscore) empty-stream]
-        [else (cond [(pisleep? (first uscore))
+        [else (display (first uscore))
+              (newline)
+              (cond [(pisleep? (first uscore))
                      (set-vtime (+ (current-vtime)
                                    (* MSEC-PER-SEC
                                       (pisleep-duration
@@ -191,7 +196,9 @@
                                   (uscore->score (rest uscore)))]
                     [(Loop? (first uscore))
                      (uscore->score (append
-                                     (Loop-block (first uscore))
+                                     (repeat-block
+                                      (Loop-block (first uscore))
+                                      (Loop-reps (first uscore)))
                                      (rest uscore)))]
                     [(Rand? (first uscore))
                      (stream-cons (list
@@ -200,7 +207,7 @@
                                              (random (length (Rand-block (first uscore))))))
                                   (uscore->score (rest uscore)))]
                     [(fx? (first uscore))
-                     (define f-block (uscore->score (fx-block (first uscore))))
+                     (define f-block (uscore->score (force (fx-block (first uscore)))))
                      (stream-cons (list (current-vtime) (set-block (first uscore) f-block))
                                   (uscore->score (rest uscore))
                                   )]
@@ -208,9 +215,6 @@
                     [else (raise-argument-error 'uscore->score
                                                 "list of notes and sleeps"
                                                 0 uscore (current-vtime))])]))
-
-;; call uscore->score on a loop block [reps] times
-
 
 
 ;; the piece is scheduled to start this far in the future to give time
@@ -229,10 +233,15 @@
   (queue-events job-ctxt
                 (uscore->score uscore)))
 
+;; a pisleep is a number representing time in ms to sleep
 (struct pisleep (duration) #:prefab)
+;; a loop is a number representing the number of reps and
+;; a block, which is a closure over a user score
 (struct Loop (reps block))
+;; a simple rand structure to select a random event from a small score
 (struct Rand (block))
 
+;; create a pisleep structure
 (define (psleep t)
   (pisleep t))
 
@@ -245,20 +254,37 @@
         [(fx? s) (control-fx s args)]
         [else (error 'control "not a note or sample")]))
 
+;; current time to execute an event in milliseconds
 (define cur-vtime (box 0))
-
 (define (current-vtime)
   (unbox cur-vtime))
 (define (set-vtime time)
   (set-box! cur-vtime time))
 
-;; define a loop
+;; create a loop structure, given a number of reps and a block 
 (define (loop reps block)
+  (Loop reps block))
+#;(define (loop reps block)
   (Loop reps (repeat-block block reps)))
+;; repeat a block [reps] times in a loop
 (define (repeat-block block reps)
-  (cond
+  (flatten
+   (for/list ([n reps])
+    (let ([b block])
+      (force b))))
+  #;(cond
     [(zero? reps) empty]
-    [else (append block (repeat-block block (sub1 reps)))]))
+    [else (append (force block) (repeat-block block (sub1 reps)))]))
+;; choose from a variable amount of arguments
+(define (choose . args)
+  (list-ref args (random (length args))))
+;; random float range
+(define (rrand min max)
+  (+ min (* max (random))))
+
+;; a block is a closure around a block of user score
+(define (block . args)
+  (lazy args))
 
 ;; define a random object
 (define (rand block)

@@ -16,7 +16,7 @@
 
 (define-runtime-path here ".")
 (define SCSYNTH-PATH-MAC (build-path here "scsynth"))
-;; currently broken
+;; NB: requires SuperCollider-3.8.0 on C drive. Way too restrictive.
 (define SCSYNTH-PATH-WIN (build-path "C://Program Files//SuperCollider-3.8.0//scsynth.exe"))
 
 ;; honestly, all of this machinery is a bit silly.
@@ -156,8 +156,8 @@
 ;; for all other programs
 (define (shutdown-scsynth)
   (match (system-type)
-    ['unix (process "killall -9 jackd")]
-    ['windows (process "Taskkill /IM scsynth.exe /F")])
+    ['windows (process "Taskkill /IM scsynth.exe /F")]
+    [else (process "killall -9 jackd")])
   (void))
 
 (module+ test

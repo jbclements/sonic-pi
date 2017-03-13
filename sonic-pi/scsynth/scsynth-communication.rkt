@@ -155,7 +155,7 @@
 ;; send an element (no wrapping)
 (define (send-command/elt ctxt msg)
   ;; NB: THIS CAN BLOCK:
-  ;(printf "sending: ~v\n" msg)
+  (printf "sending: ~v\n" msg)
   (udp-send (comm-socket ctxt) (osc-element->bytes msg)))
 
 ;; get a message (but don't wait longer than SERVER-TIMEOUT

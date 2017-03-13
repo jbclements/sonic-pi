@@ -1,9 +1,13 @@
 #lang typed/racket/base
 
+;; for now this is just a file for functions that
+;; are used by multiple modules
+
 (require racket/match
          racket/list)
 (require/typed setup/dirs
                [find-user-pkgs-dir (-> Path)])
+
 (provide complete-field-list
          merge-field-list
          group-params
@@ -12,9 +16,7 @@
          ParamField
          ParamAssoc)
 
-
-;; for now this is just a file for functions that
-;; are used by multiple modules
+;; root directory for sonic-pi located in [pkgs]/sonic-pi/sonic-pi
 (: root-dir (-> Path))
 (define (root-dir)
   (build-path (find-user-pkgs-dir)
@@ -43,12 +45,14 @@
 ;; specified defaults, return an alist that is the
 ;; merging of the two, taking the specified field values
 ;; over the defaults
+;; NB: this allows bogus arguments but they'll just be ignored by SuperCollider
+;; NB: this is terribly slow
 (: merge-field-list (ParamAssoc ParamAssoc -> ParamAssoc))
 (define (merge-field-list alist thelist)
   (append (complete-field-list alist thelist)
           (remove-dups alist thelist)))
 
-;; removes any the ParamVals from alist
+;; removes any of the ParamVals from alist
 ;; that are already in thelist
 (: remove-dups (ParamAssoc ParamAssoc -> ParamAssoc))
 (define (remove-dups alist thelist)

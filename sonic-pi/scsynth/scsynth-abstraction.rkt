@@ -124,7 +124,7 @@
   (send-command comm #"/g_new" new-node-id command-num relative-to)
   new-node-id)
 
-;; trigger a new fx
+;; create a new fx node under the fx-group
 (define (trigger-fx ctxt f)
   (define ng (new-group (ctxt-comm ctxt) 'head (ctxt-fx-group ctxt)))
   ;; send new synth
@@ -132,9 +132,12 @@
              (fx-name f)
              'head
              (ctxt-fx-group ctxt)
-             (flatten (fx-params f)))
+             (apply append (fx-params f)))
+  
   (void))
 
+;; creates a new synth node for fx. works the same as new-synth but takes
+;; params as a list
 (define (new-fx-synth comm synthdef-name placement-command relative-to params)
   (define new-node-id (fresh-node-id!))
   (define command-num (placement-command->number placement-command))

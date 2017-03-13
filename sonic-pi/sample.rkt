@@ -97,7 +97,7 @@
     [1 #"sonic-pi-mono_player"]
     [2 #"sonic-pi-stereo_player"]))
 
-;; control a sample's arguments
+;; change specific arguments of a given sample to new values
 (: control-sample (Sample (U String Real) * -> Sample))
 (define (control-sample s . param-parts)
   (Sample (Sample-name s)
