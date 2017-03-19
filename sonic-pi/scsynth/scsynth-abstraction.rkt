@@ -239,7 +239,8 @@
   (send-command comm #"/n_free" job-mixer)
   (send-command comm #"/n_free" job-synth-group)
   ;; for now this is needed for more than one run to happen
-  ;; when there are multiple jobs going on this will need to change
+  ;; when there are multiple jobs going on this will need to change.
+  ;; will there be multiple jobs?
   (shutdown-scsynth))
 
 

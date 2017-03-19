@@ -157,7 +157,8 @@
 (define (shutdown-scsynth)
   (match (system-type)
     ['windows (process "Taskkill /IM scsynth.exe /F")]
-    [else (process "killall -9 jackd")])
+    [else (begin (process "killall -9 jackd")
+                 (process "killall -9 scsynth"))])
   (void))
 
 (module+ test

@@ -24,6 +24,7 @@
          block
          choose
          rrand
+         rrand_i
          control)
 
 ;; all kinds of interesting interface questions here. Implicit sequence
@@ -273,9 +274,22 @@
 ;; choose from a variable amount of arguments
 (define (choose . args)
   (list-ref args (random (length args))))
-;; random float range
+
+;; random in a range.
+;; if the arguments are integers, it gets random integers ONLY
+;; if the arguments are floats, it calculates a random float
 (define (rrand min max)
   (+ min (* (- max min) (random))))
+
+;; random integer in any range, inclusive
+(define (rrand_i min max)
+  (if (> min 0)
+      (random min max)
+      (let ([diff (- 1 min)])
+        (- (random (+ diff min)
+                   (add1 (+ diff max)))
+           diff))))
+
 
 ;; a block is a closure around a block of user score
 #;(define (block . args)
@@ -294,6 +308,7 @@
   (syntax-parse stx
     [(_ e:expr ...)
      #'(#%module-begin
+        (random-seed 52) ;; totally arbitrary
         (define ctxt (startup))
         (define job-ctxt (start-job ctxt))
         (with-handlers
