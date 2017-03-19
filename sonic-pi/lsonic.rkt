@@ -180,8 +180,7 @@
 ;; of action
 (define (uscore->score uscore)
   (cond [(empty? uscore) empty-stream]
-        [else (display (first uscore))
-              (newline)
+        [else 
               (cond [(pisleep? (first uscore))
                      (set-vtime (+ (current-vtime)
                                    (* MSEC-PER-SEC
@@ -207,7 +206,7 @@
                                              (random (length (Rand-block (first uscore))))))
                                   (uscore->score (rest uscore)))]
                     [(fx? (first uscore))
-                     (define f-block (uscore->score (force (fx-block (first uscore)))))
+                     (define f-block (uscore->score ((fx-block (first uscore)))))
                      (stream-cons (list (current-vtime) (set-block (first uscore) f-block))
                                   (uscore->score (rest uscore))
                                   )]
@@ -268,23 +267,22 @@
   (Loop reps (repeat-block block reps)))
 ;; repeat a block [reps] times in a loop
 (define (repeat-block block reps)
-  (flatten
-   (for/list ([n reps])
-    (let ([b block])
-      (force b))))
-  #;(cond
+  (cond
     [(zero? reps) empty]
-    [else (append (force block) (repeat-block block (sub1 reps)))]))
+    [else (append (block) (repeat-block block (sub1 reps)))]))
 ;; choose from a variable amount of arguments
 (define (choose . args)
   (list-ref args (random (length args))))
 ;; random float range
 (define (rrand min max)
-  (+ min (* max (random))))
+  (+ min (* (- max min) (random))))
 
 ;; a block is a closure around a block of user score
-(define (block . args)
-  (lazy args))
+#;(define (block . args)
+  (λ () args))
+(define-syntax block
+  (syntax-rules ()
+    [(_ a ...) (λ () (list a ...))]))
 
 ;; define a random object
 (define (rand block)
@@ -343,12 +341,11 @@
                        (list (synth "beep" 60)
                              (psleep 4)
                              (fx "reverb"
-                                 (list (synth "beep" 60)
+                                 (block (synth "beep" 60)
                                        (psleep 4)
                                        (sample "elec_blip")
                                        (psleep 4)
                                        (synth "beep" 60))))))))))
                   (list (list 6000 (synth "beep" 60))
                         (list 10000 (sample "elec_blip"))
-                        (list 14000 (synth "beep" 60))))
-    )))
+                        (list 14000 (synth "beep" 60)))))))

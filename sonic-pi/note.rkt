@@ -39,6 +39,8 @@
      (decay 0)
      (sustain 0)
      (release 1)
+     ;;(cutoff 0)
+     ;;(cutoff_slide 0)
      (attack_level 1)
      (sustain_level 1)
      (env_curve 2)
