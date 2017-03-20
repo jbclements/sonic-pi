@@ -126,7 +126,7 @@
 
 ;; create a new fx node under the fx-group
 (define (trigger-fx ctxt f)
-  (define ng (new-group (ctxt-comm ctxt) 'head (ctxt-fx-group ctxt)))
+  #;(define ng (new-group (ctxt-comm ctxt) 'head (ctxt-fx-group ctxt)))
   ;; send new synth
   (new-fx-synth (ctxt-comm ctxt)
              (fx-name f)

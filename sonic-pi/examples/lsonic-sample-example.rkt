@@ -1,6 +1,5 @@
 #lang s-exp sonic-pi/lsonic
 
-
 ;; example using fx, samples, notes, and sleeps
 (synth "beep" 60)
 (psleep 0.5)
@@ -12,7 +11,7 @@
 ;; bitcrusher really messes up the sound so you can
 ;; be sure the effect was applied
 (fx "bitcrusher" "bits_slide_shape" 3 "bits" 2
-  (list
+  (block
    (synth "beep" 60)
    (psleep 0.5)
    (sample "elec_plip")
@@ -23,9 +22,9 @@
 
 ;; nested fx works too!
 (fx "echo"
- (list
+ (block
  (fx "bitcrusher" "bits_slide_shape" 3 "bits" 2
-  (list
+  (block
    (synth "beep" 60)
    (psleep 0.5)
    (sample "elec_plip")

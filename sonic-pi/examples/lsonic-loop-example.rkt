@@ -14,7 +14,9 @@
            (sample "bd_haus")
            (psleep 0.25)))
 (loop 16
-      (block (rand (list
-                   (sample "bd_ada")
-                   (sample "bd_tek")))
-            (psleep 0.25)))
+      (block #;(rand (list
+                      (sample "bd_ada")
+                      (sample "bd_tek")))
+             ;; new and improved!
+             (sample (choose "bd_ada" "bd_tek"))
+             (psleep 0.25)))
