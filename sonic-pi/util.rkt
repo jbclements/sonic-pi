@@ -29,17 +29,18 @@
 (define-type ParamAssoc (Listof ParamField))
 
 
-;; given an association list of specified fields, return
+;; given an association list of specified fields and an
+;; association list of default fields, return
 ;; an alist mapping all required parameters to either default
 ;; or specified values.
 ;; NB: should we check for dups? Or for bogus fields?
 (: complete-field-list (ParamAssoc ParamAssoc -> ParamAssoc))
-(define (complete-field-list alist thelist)
-  (for/list ([pr (in-list thelist)])
-    (match-define (list field-name thelist) pr)
+(define (complete-field-list alist defaultlist)
+  (for/list ([pr (in-list defaultlist)])
+    (match-define (list field-name defaultlist) pr)
     (match (assoc field-name alist)
       [(list _ new-val) (list field-name new-val)]
-      [#f (list field-name thelist)])))
+      [#f (list field-name defaultlist)])))
 
 ;; given an association list of specified fields and
 ;; specified defaults, return an alist that is the
@@ -48,9 +49,9 @@
 ;; NB: this allows bogus arguments but they'll just be ignored by SuperCollider
 ;; NB: this is terribly slow
 (: merge-field-list (ParamAssoc ParamAssoc -> ParamAssoc))
-(define (merge-field-list alist thelist)
-  (append (complete-field-list alist thelist)
-          (remove-dups alist thelist)))
+(define (merge-field-list alist defaultlist)
+  (append (complete-field-list alist defaultlist)
+          (remove-dups alist defaultlist)))
 
 ;; removes any of the ParamVals from alist
 ;; that are already in thelist

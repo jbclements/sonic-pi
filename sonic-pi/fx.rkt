@@ -1,10 +1,7 @@
 #lang racket
 
 (require 
-         "util.rkt"
-         "sample.rkt"
-         "allocator.rkt"
-         "note.rkt")
+         "util.rkt")
 
 (provide fx?
          fx
@@ -79,4 +76,32 @@
   (cond [(empty? lst) (error 'drop-last "empty list")]
         [(empty? (rest lst)) empty]
         [else (cons (first lst) (drop-last (rest lst)))]))
+
+
+(module+ test
+  (require rackunit)
+
+  (check-equal? (fx "bitcrusher"
+                    ;; this is allowed to be bogus
+                    (list 1 2 3))
+                (Fx #"sonic-pi-fx_bitcrusher"
+                    '((#"reps" 1)
+                      (#"in_bus" 0)
+                      (#"out_bus" 0))
+                    (list 1 2 3)))
+  (check-equal? (set-fx-busses (fx "bitcrusher"
+                                   (list 1 2 3))
+                               12 10)
+                (Fx #"sonic-pi-fx_bitcrusher"
+                    '((#"reps" 1)
+                      (#"in_bus" 12)
+                      (#"out_bus" 10))
+                    (list 1 2 3)))
+  (check-equal? (control-fx (fx "bitcrusher" (list 1 2 3))
+                            "in_bus" 12 "out_bus" 10)
+                (Fx #"sonic-pi-fx_bitcrusher"
+                    '((#"reps" 1)
+                      (#"in_bus" 12)
+                      (#"out_bus" 10))
+                    (list 1 2 3))))
  

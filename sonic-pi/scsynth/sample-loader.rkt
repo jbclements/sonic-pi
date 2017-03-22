@@ -3,8 +3,8 @@
 ;; this file handles all the sample loading behavior
 ;; which includes a hash buffer for storing the
 ;; information about loaded samples
-(require "scsynth/scsynth-abstraction.rkt"
-         "scsynth/scsynth-communication.rkt"
+(require "scsynth-abstraction.rkt"
+         "scsynth-communication.rkt"
          osc)
 
 (provide load-sample
@@ -42,7 +42,7 @@
 
 ;; load a list of samples in advance
 (define (load-samples job-ctxt spaths)
-  (apply (λ (path) (load-sample job-ctxt path))
+  (map (λ (path) (load-sample job-ctxt path))
          spaths))
 
 ;; creates a new sample buffer id.
@@ -54,3 +54,20 @@
              (set-box! buff-id (add1 (unbox buff-id)))
              (sub1 (unbox buff-id))]
             [else (error 'buff-id "ran out of buffer space")]))))
+
+
+(module+ test
+  (require "../sample.rkt")
+  (require rackunit)
+  (define ctxt (startup))
+  (define job-ctxt (start-job ctxt))
+  (define b-infos (load-samples job-ctxt (list (sample-path (sample "ambi_choir"))
+                               (sample-path (sample "bd_tek")))))
+  ;; because sample-loaded? returns the b-info I had to get that manually
+  (check-equal? (sample-loaded? (sample-path (sample "ambi_choir")))
+                (first b-infos))
+  (check-equal? (sample-loaded? (sample-path (sample "bd_tek")))
+                (second b-infos))
+  (check-false (sample-loaded? (sample-path (sample "cnoise"))))
+  (sleep 5)
+  (end-job job-ctxt))

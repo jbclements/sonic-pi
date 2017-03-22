@@ -1,7 +1,7 @@
 #lang s-exp sonic-pi/lsonic
 
 (fx "reverb" "mix" 0.5
-    (block (loop 5
+    (block (loop 10
                  (block (synth (choose "bnoise" "cnoise" "gnoise")
                                "D3"
                                "amp" (rrand 0.5 1.5)

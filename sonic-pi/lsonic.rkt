@@ -7,19 +7,17 @@
   "note.rkt"
   "sample.rkt"
   "fx.rkt"
-  "sample-loader.rkt"
+  "scsynth/sample-loader.rkt"
   "allocator.rkt"
   (for-syntax syntax/parse)
   rackunit)
 
 (provide (except-out (all-from-out racket) sleep #%module-begin)
-         (rename-out [my-module-begin #%module-begin]
-                     [psleep sleep])
+         (rename-out [my-module-begin #%module-begin])
          synth
+         psleep
          sample
          fx
-         rand
-         psleep
          loop
          block
          choose
@@ -45,53 +43,65 @@
 ;; a uscore is a list of uevents
 ;; a uevent is one of
 ;; - (pisleep ...), representing the passage of time, or
-;; - a note, representing a note to be played at the current time
-;; - (loop list-of-uscore), representing a ... hmmm.... not sure about this.
+;; - a (note ...), representing a note to be played at the current time, or
+;; - a (sample ...), representing a sample to be played at the current time, or
+;; - an (fx ... block), representing a sound effect to be applied to other uevents, or
+;; - a (loop reps block), representing a (possibly infinite) loop of uevents
 
 ;; a score is (stream/c event) WITH NON-DECREASING TIMES
 ;; an event is (list/c time-in-msec synth-note)
 ;; where time-in-msec is relative to (current-inexact-milliseconds)
 
-;; given a job-ctxt and an event, queue the note
+;; a block is a closure around a score
+
+;; given a job-ctxt and an event, queue the event
 (define (queue-event job-ctxt evt)
   (cond
     [(sample? (second evt))
-     (queue-sample job-ctxt evt)]
+     (queue-sample job-ctxt (second evt) (first evt))]
     [(note? (second evt))
      (play-synth job-ctxt
                  (note-name (second evt))
                  (first evt)
                  (note-params (control-note (second evt) "out_bus" (current-outbus))))]
     [(fx? (second evt))
-     (define out-bus (current-outbus))
-     (define in-bus (fresh-bus-id))
-     (set-current-outbus in-bus)
-     (trigger-fx (job-ctxt-ctxt job-ctxt) (set-fx-busses (second evt) in-bus out-bus))
-     (queue-block job-ctxt (fx-block (second evt)) in-bus)
-     (set-current-outbus out-bus)]
+     (queue-fx job-ctxt (second evt) (first evt))]
     [(Loop? (second evt)) (queue-block job-ctxt
                            (Loop-block (second evt))
                                        (current-outbus))]))
+
+;; queue a given sample at the specified time
+(define (queue-sample job-ctxt samp time)
+  ; load sample if not already loaded
+  (define s-loaded (sample-loaded? (sample-path samp)))
+  (define b-info (if s-loaded
+                     s-loaded
+                     (load-sample job-ctxt (sample-path samp))))
+  ;; set the sample buffer id
+  (define s (resolve-specific-sampler (control-sample samp "buf" (first b-info) "out_bus" (current-outbus)) b-info))
+  ;; play the sample
+  (play-synth job-ctxt
+              (sample-name s)
+              time
+              (sample-params s)))
+
+;; queue an effect and it's corresponding block
+(define (queue-fx job-ctxt effect time)
+  (define out-bus (current-outbus))
+  (define in-bus (fresh-bus-id))
+  (set-current-outbus in-bus)
+  (define f (set-fx-busses effect in-bus out-bus))
+  (play-synth job-ctxt
+              (fx-name f)
+              time
+              (fx-params f))
+  (queue-block job-ctxt (fx-block f) in-bus)
+  (set-current-outbus out-bus))
 
 ;; queue a block from fx with a new out_bus
 (define (queue-block job-ctxt block new-out-bus)
   (map (λ (s) (queue-event job-ctxt s))
          (stream->list block)))
-
-;; queue a sample
-(define (queue-sample job-ctxt evt)
-  ; load sample if not already loaded
-  (define s-loaded (sample-loaded? (sample-path (second evt))))
-  (define b-info (if s-loaded
-                     s-loaded
-                     (load-sample job-ctxt (sample-path (second evt)))))
-  ;; set the sample buffer id
-  (define s (resolve-specific-sampler (control-sample (second evt) "buf" (first b-info) "out_bus" (current-outbus)) b-info))
-  ;; play the sample
-  (play-synth job-ctxt
-              (sample-name s)
-              (first evt)
-              (sample-params s)))
 
 
 ;; given a job-ctxt and a list of events, queue them all.
@@ -200,12 +210,6 @@
                                       (Loop-block (first uscore))
                                       (Loop-reps (first uscore)))
                                      (rest uscore)))]
-                    [(Rand? (first uscore))
-                     (stream-cons (list
-                                   (current-vtime)
-                                   (list-ref (Rand-block (first uscore))
-                                             (random (length (Rand-block (first uscore))))))
-                                  (uscore->score (rest uscore)))]
                     [(fx? (first uscore))
                      (define f-block (uscore->score ((fx-block (first uscore)))))
                      (stream-cons (list (current-vtime) (set-block (first uscore) f-block))
@@ -213,7 +217,7 @@
                                   )]
                     
                     [else (raise-argument-error 'uscore->score
-                                                "list of notes and sleeps"
+                                                "list of notes, sleeps, samples, fx's, loops"
                                                 0 uscore (current-vtime))])]))
 
 
@@ -245,14 +249,12 @@
 (define (psleep t)
   (pisleep t))
 
-;; control a note or sample
-;; NB: currently broken. doesn't matter until
-;; lsonic allows definition of variables anyway
+;; control a note, sample, or fx
 (define (control s . args)
   (cond [(note? s) (control-note s args)]
         [(sample? s) (control-sample s args)]
         [(fx? s) (control-fx s args)]
-        [else (error 'control "not a note or sample")]))
+        [else (error 'control "not a note, sample, or fx")]))
 
 ;; current time to execute an event in milliseconds
 (define cur-vtime (box 0))
@@ -264,8 +266,7 @@
 ;; create a loop structure, given a number of reps and a block 
 (define (loop reps block)
   (Loop reps block))
-#;(define (loop reps block)
-  (Loop reps (repeat-block block reps)))
+
 ;; repeat a block [reps] times in a loop
 (define (repeat-block block reps)
   (cond
@@ -292,15 +293,10 @@
 
 
 ;; a block is a closure around a block of user score
-#;(define (block . args)
-  (λ () args))
+;; this is a nasty macro. is there a better way?
 (define-syntax block
   (syntax-rules ()
     [(_ a ...) (λ () (list a ...))]))
-
-;; define a random object
-(define (rand block)
-  (Rand block))
 
 (define synth note)
 

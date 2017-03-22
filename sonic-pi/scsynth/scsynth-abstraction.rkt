@@ -12,7 +12,6 @@
 
 (require "scsynth-communication.rkt"
          "../allocator.rkt"
-         "../fx.rkt"
          (for-syntax syntax/parse)
          osc
          racket/runtime-path
@@ -23,8 +22,7 @@
           [start-job (-> ctxt? job-ctxt?)]
           [play-synth (-> job-ctxt? bytes? inexact-real? (listof (listof (or/c bytes? real?))) void?)]
           [end-job (-> job-ctxt? void?)]
-          [synchronize/ctxt (-> ctxt? void?)]
-          [trigger-fx (-> ctxt? fx? void?)])
+          [synchronize/ctxt (-> ctxt? void?)])
          ctxt-comm
          job-ctxt-ctxt)
 
@@ -122,30 +120,6 @@
   (define command-num
     (placement-command->number placement-command))
   (send-command comm #"/g_new" new-node-id command-num relative-to)
-  new-node-id)
-
-;; create a new fx node under the fx-group
-(define (trigger-fx ctxt f)
-  #;(define ng (new-group (ctxt-comm ctxt) 'head (ctxt-fx-group ctxt)))
-  ;; send new synth
-  (new-fx-synth (ctxt-comm ctxt)
-             (fx-name f)
-             'head
-             (ctxt-fx-group ctxt)
-             (apply append (fx-params f)))
-  
-  (void))
-
-;; creates a new synth node for fx. works the same as new-synth but takes
-;; params as a list
-(define (new-fx-synth comm synthdef-name placement-command relative-to params)
-  (define new-node-id (fresh-node-id!))
-  (define command-num (placement-command->number placement-command))
-  (send-command/elt
-   comm
-   (osc-message
-    #"/s_new"
-    (list* synthdef-name new-node-id command-num relative-to params)))
   new-node-id)
 
 ;; create a new synth node, using the given name, placement-command,
@@ -250,6 +224,7 @@
   (define ctxt (startup))
   (define job-ctxt (start-job ctxt))
   (define n (note "beep" 100))
+  
   (play-synth job-ctxt
               (note-name n)
               (+ 500 (current-inexact-milliseconds))

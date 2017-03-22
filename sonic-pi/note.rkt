@@ -88,8 +88,7 @@
             ["d" 2]
             ["e" 4]
             ["f" 5]
-            ["g" 7]
-            [#f (error 'note "invalid note representation")])
+            ["g" 7])
           (error 'note "invalid note representation"))))
 
 ;; finds the offset in the table when sharp or flat
@@ -105,10 +104,12 @@
         (match (string-downcase (car acc))
           ["s" 1]
           ["b" -1]
-          ["f" -1]
-          ;; this should never happen
-          [#f (error 'note "bad accidental")])
-        0)))
+          ["f" -1])
+        ;; we could still get a bad acc here
+        (if (regexp-match #rx"[a-zA-Z]"
+                          (substring n 1 (string-length n)))
+            (error "bad accidental")
+            0))))
 
 ;; gets the octave for a note. the default is 4
 (: octave (String -> Real))
@@ -119,7 +120,7 @@
         4)))
 
 
-;; control a note's parameters
+;; change a note's parameters to specified new ones
 (: control-note (Note (U String Real) * -> Note))
 (define (control-note n . param-parts)
   (Note (Note-name n)
@@ -132,6 +133,11 @@
   (check-equal? (note->midi "Fs") 54)
   (check-equal? (note->midi "gb") 54)
   (check-equal? (note->midi "bb3") 46)
+  (check-equal? (note->midi "df") 49)
+  (check-equal? (note->midi "A9") 117)
+  (check-equal? (note->midi "es6") 77)
+  (check-exn exn:fail? (λ () (note->midi "hs")))
+  (check-exn exn:fail? (λ () (note->midi "ar")))
   
   (check-equal? (note "bronky" 39)
                 (Note #"sonic-pi-bronky"
@@ -179,6 +185,27 @@
   (check-equal? (note "bronky" "C2" "decay" 0.9)
                 (Note #"sonic-pi-bronky"
                   '((#"note" 24)
+                  (#"note_slide" 0)
+                  (#"note_slide_shape" 5)
+                  (#"node_slide_curve" 0)
+                  (#"amp" 1)
+                  (#"amp_slide" 0)
+                  (#"amp_slide_shape" 5)
+                  (#"pan" 0)
+                  (#"pan_slide" 0)
+                  (#"pan_slide_shape" 5)
+                  (#"pan_slide_curve" 0)
+                  (#"attack" 0)
+                  (#"decay" 0.9)
+                  (#"sustain" 0)
+                  (#"release" 1)
+                  (#"attack_level" 1)
+                  (#"sustain_level" 1)
+                  (#"env_curve" 2)
+                  (#"out_bus" 12.0))))
+  (check-equal? (control-note (note "bronky" "AF3") "decay" 0.9)
+                (Note #"sonic-pi-bronky"
+                  '((#"note" 44)
                   (#"note_slide" 0)
                   (#"note_slide_shape" 5)
                   (#"node_slide_curve" 0)

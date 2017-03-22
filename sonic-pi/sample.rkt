@@ -69,8 +69,7 @@
           (string->bytes/utf-8 (resolve-path name))
           (complete-field-list other-params default-vals)))
 
-;; resolve the path for a sample
-;; for now the path is relative for Unix
+;; get the absolute path for a sample if not already given
 (: resolve-path (String -> String))
 (define (resolve-path path)
   (if (complete-path? path)
@@ -283,4 +282,40 @@
                   (#"hpf_slide_curve" 0)
                   (#"rate" 1)
                   (#"out_bus" 10)
+                  )))
+  (check-equal? (sample "/home/austin/Documents/foo.flac")
+                (Sample #"sonic-pi-basic_stereo_player"
+                   (string->bytes/utf-8
+                    (path->string
+                    (build-path "/home"
+                                "austin"
+                                "Documents"
+                                "foo.flac")))
+                  '((#"buf" 0)
+                  (#"amp" 1)
+                  (#"amp_slide" 0)
+                  (#"amp_slide_shape" 1)
+                  (#"amp_slide_curve" 0)
+                  (#"attack" 0.0)
+                  (#"decay" 0)
+                  (#"sustain" -1)
+                  (#"release" 0.0)
+                  (#"attack_level" 1)
+                  (#"decay_level" -1)
+                  (#"sustain_level" 1)
+                  (#"env_curve" 1)
+                  (#"pan" 0)
+                  (#"pan_slide" 0)
+                  (#"pan_slide_shape" 1)
+                  (#"pan_slide_curve" 0)
+                  (#"lpf" -1)
+                  (#"lpf_slide" 0)
+                  (#"lpf_slide_shape" 1)
+                  (#"lpf_slide_curve" 0)
+                  (#"hpf" -1)
+                  (#"hpf_slide" 0)
+                  (#"hpf_slide_shape" 1)
+                  (#"hpf_slide_curve" 0)
+                  (#"rate" 1)
+                  (#"out_bus" 12)
                   ))))
