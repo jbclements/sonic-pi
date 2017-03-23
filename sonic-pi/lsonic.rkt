@@ -45,40 +45,45 @@
 ;; - (pisleep ...), representing the passage of time, or
 ;; - a (note ...), representing a note to be played at the current time, or
 ;; - a (sample ...), representing a sample to be played at the current time, or
-;; - an (fx ... block), representing a sound effect to be applied to other uevents, or
-;; - a (loop reps block), representing a (possibly infinite) loop of uevents
+;; - an (fx ... block), representing a sound effect to be applied to other uevents
 
 ;; a score is (stream/c event) WITH NON-DECREASING TIMES
-;; an event is (list/c time-in-msec synth-note)
-;; where time-in-msec is relative to (current-inexact-milliseconds)
+;; an event is a structure containing
+;;  - the virtual time relative to (current-inexact-milliseconds)
+;;  - the uevent to be run
+;;  - a given bus
+(define-struct Event (vtime uevent inbus outbus) #:transparent)
+
 
 ;; a block is a closure around a score
 
 ;; given a job-ctxt and an event, queue the event
 (define (queue-event job-ctxt evt)
   (cond
-    [(sample? (second evt))
-     (queue-sample job-ctxt (second evt) (first evt))]
-    [(note? (second evt))
+    [(sample? (Event-uevent evt))
+     (queue-sample job-ctxt (Event-uevent evt) (Event-vtime evt) (Event-outbus evt))]
+    [(note? (Event-uevent evt))
      (play-synth job-ctxt
-                 (note-name (second evt))
-                 (first evt)
-                 (note-params (control-note (second evt) "out_bus" (current-outbus))))]
-    [(fx? (second evt))
-     (queue-fx job-ctxt (second evt) (first evt))]
-    [(Loop? (second evt)) (queue-block job-ctxt
-                           (Loop-block (second evt))
-                                       (current-outbus))]))
+                 (note-name (Event-uevent evt))
+                 (Event-vtime evt)
+                 (note-params (control-note (Event-uevent evt) "out_bus" (Event-outbus evt))))]
+    [(fx? (Event-uevent evt))
+     (queue-fx job-ctxt (Event-uevent evt)
+               (Event-vtime evt) (Event-inbus evt)
+               (Event-outbus evt))]
+    ;; there are now void events for every sleep so we ignore those
+    [(void? (Event-uevent evt))
+     (void)]))
 
 ;; queue a given sample at the specified time
-(define (queue-sample job-ctxt samp time)
+(define (queue-sample job-ctxt samp time bus)
   ; load sample if not already loaded
   (define s-loaded (sample-loaded? (sample-path samp)))
   (define b-info (if s-loaded
                      s-loaded
                      (load-sample job-ctxt (sample-path samp))))
   ;; set the sample buffer id
-  (define s (resolve-specific-sampler (control-sample samp "buf" (first b-info) "out_bus" (current-outbus)) b-info))
+  (define s (resolve-specific-sampler (control-sample samp "buf" (first b-info) "out_bus" bus) b-info))
   ;; play the sample
   (play-synth job-ctxt
               (sample-name s)
@@ -86,20 +91,18 @@
               (sample-params s)))
 
 ;; queue an effect and it's corresponding block
-(define (queue-fx job-ctxt effect time)
-  (define out-bus (current-outbus))
-  (define in-bus (fresh-bus-id))
-  (set-current-outbus in-bus)
-  (define f (set-fx-busses effect in-bus out-bus))
+(define (queue-fx job-ctxt effect time inbus outbus)
+  (define f (set-fx-busses effect
+                           inbus
+                           outbus)) 
   (play-synth job-ctxt
               (fx-name f)
               time
               (fx-params f))
-  (queue-block job-ctxt (fx-block f) in-bus)
-  (set-current-outbus out-bus))
+  (queue-block job-ctxt (fx-block f)))
 
 ;; queue a block from fx with a new out_bus
-(define (queue-block job-ctxt block new-out-bus)
+(define (queue-block job-ctxt block)
   (map (λ (s) (queue-event job-ctxt s))
          (stream->list block)))
 
@@ -142,8 +145,7 @@
 ;; how long until the event is supposed to happen?
 (define (current-lead event)
   (define t (current-inexact-milliseconds))
-  (match-define (list note-time note) event)
-  (- note-time t))
+  (- (Event-vtime event) t))
 
 ;; lead time in milliseconds. Don't queue a note more than this
 ;; far in advance:
@@ -154,88 +156,63 @@
 ;; given a user score and a virtual time, produce a score associating
 ;; a time with each note.
 ;; DANGER: loop with only sleep can lead to spaz-out...
-#;(define (uscore->score uscore vtime)
+(define (uscore->score uscore vtime [outbus 12])
   (cond [(empty? uscore) empty-stream]
         [else (cond [(pisleep? (first uscore))
-                     (uscore->score (rest uscore)
-                                    (+ vtime (* MSEC-PER-SEC
-                                                (pisleep-duration
-                                                 (first uscore)))))]
+                     ;; because the last psleep can be ignored, let's
+                     ;; create an empty event with the new time
+                     (let ([newtime (+ vtime (* MSEC-PER-SEC
+                                                (pisleep-duration (first uscore))))])
+                         (stream-cons (Event newtime (void) 0 outbus)
+                                      (uscore->score (rest uscore)
+                                                     newtime
+                                                     outbus)))]
                     [(sample? (first uscore))
-                     (stream-cons (list vtime (first uscore))
+                     (stream-cons (Event vtime (first uscore) 0 outbus)
                                   (uscore->score (rest uscore)
-                                                 vtime))]
+                                                 vtime
+                                                 outbus))]
                     [(note? (first uscore))
-                     (stream-cons (list vtime (first uscore))
+                     (stream-cons (Event vtime (first uscore) 0 outbus)
                                   (uscore->score (rest uscore)
-                                                 vtime))]
+                                                 vtime
+                                                 outbus))]
                     [(Loop? (first uscore))
-                     (uscore->score (append
-                                     (Loop-block (first uscore))
-                                     (rest uscore))
-                                    vtime)]
+                     (cond
+                       [(zero? (Loop-reps (first uscore)))
+                        (uscore->score (rest uscore)
+                                       vtime
+                                       outbus)]
+                       [else (let ([b (uscore->score ((Loop-block (first uscore))) vtime outbus)])
+                                 (stream-append b
+                                          (uscore->score (append (list (sub1loop (first uscore)))
+                                                                 (rest uscore))
+                                                         (Event-vtime (stream-ref b (sub1 (stream-length b))))
+                                                         outbus)))])]
                     [(fx? (first uscore))
-                     (define f-block (uscore->score ((fx-block (first uscore)))
-                                                     vtime))
-                     (define new_vtime (first (last (stream->list f-block))))
-                     (stream-cons (list vtime (set-block (first uscore) f-block))
-                                  (uscore->score (rest uscore) new_vtime)
-                                  )]
+                     (let* ([newbus (fresh-bus-id)]
+                            [fblock (uscore->score ((fx-block (first uscore)))
+                                                   vtime
+                                                   newbus)])
+                       (stream-cons (Event vtime (set-block (first uscore) fblock) newbus outbus)
+                                    (uscore->score (rest uscore)
+                                                   (Event-vtime (stream-ref fblock (sub1 (stream-length fblock))))
+                                                   outbus)))]
                     
                     [else (raise-argument-error 'uscore->score
-                                                "list of notes and sleeps"
+                                                "list of notes, sleeps, samples, loops, or fx's"
                                                 0 uscore vtime)])]))
-;; due to psleeps at the end of a block being ignored, I've
-;; decided that time should be kept separately. I'm keeping the old
-;; way of doing it commented out in case this ends up not being the best course
-;; of action
-(define (uscore->score uscore)
-  (cond [(empty? uscore) empty-stream]
-        [else 
-              (cond [(pisleep? (first uscore))
-                     (set-vtime (+ (current-vtime)
-                                   (* MSEC-PER-SEC
-                                      (pisleep-duration
-                                       (first uscore)))))
-                     (uscore->score (rest uscore))]
-                    [(sample? (first uscore))
-                     (stream-cons (list (current-vtime) (first uscore))
-                                  (uscore->score (rest uscore)))]
-                    [(note? (first uscore))
-                     (stream-cons (list (current-vtime) (first uscore))
-                                  (uscore->score (rest uscore)))]
-                    [(Loop? (first uscore))
-                     (uscore->score (append
-                                     (repeat-block
-                                      (Loop-block (first uscore))
-                                      (Loop-reps (first uscore)))
-                                     (rest uscore)))]
-                    [(fx? (first uscore))
-                     (define f-block (uscore->score ((fx-block (first uscore)))))
-                     (stream-cons (list (current-vtime) (set-block (first uscore) f-block))
-                                  (uscore->score (rest uscore))
-                                  )]
-                    
-                    [else (raise-argument-error 'uscore->score
-                                                "list of notes, sleeps, samples, fx's, loops"
-                                                0 uscore (current-vtime))])]))
-
 
 ;; the piece is scheduled to start this far in the future to give time
 ;; to get things started.
 (define START-MSEC-GAP 500)
 
 ;; play a user-score
-#;(define (play job-ctxt uscore)
+(define (play job-ctxt uscore)
   (queue-events job-ctxt
                 (uscore->score uscore
                                (+ (current-inexact-milliseconds)
                                   START-MSEC-GAP))))
-(define (play job-ctxt uscore)
-  (set-vtime (+ (current-inexact-milliseconds)
-                START-MSEC-GAP))
-  (queue-events job-ctxt
-                (uscore->score uscore)))
 
 ;; a pisleep is a number representing time in ms to sleep
 (struct pisleep (duration) #:prefab)
@@ -256,22 +233,14 @@
         [(fx? s) (control-fx s args)]
         [else (error 'control "not a note, sample, or fx")]))
 
-;; current time to execute an event in milliseconds
-(define cur-vtime (box 0))
-(define (current-vtime)
-  (unbox cur-vtime))
-(define (set-vtime time)
-  (set-box! cur-vtime time))
-
 ;; create a loop structure, given a number of reps and a block 
 (define (loop reps block)
   (Loop reps block))
+;; create new loop where the number of reps is one less than the one supplied
+(define (sub1loop lp)
+  (Loop (sub1 (Loop-reps lp))
+        (Loop-block lp)))
 
-;; repeat a block [reps] times in a loop
-(define (repeat-block block reps)
-  (cond
-    [(zero? reps) empty]
-    [else (append (block) (repeat-block block (sub1 reps)))]))
 ;; choose from a variable amount of arguments
 (define (choose . args)
   (list-ref args (random (length args))))
@@ -323,40 +292,49 @@
 (module+ test
   (require rackunit
            rackunit/text-ui)
+
+  (check-equal? (play-now? 990) 'play)
+  (check-equal? (play-now? 1001) '(delay 721))
+
+  ;; simple note and sleep test
+  (check-equal?
+   (stream->list
+    (uscore->score (list (synth "beep" 60)
+                         (psleep 4)
+                         (synth "beep" 66)
+                         (synth "beep" 69))
+                   2000))
+   (list (Event 2000 (synth "beep" 60) 0 12)
+         (Event 6000 (void) 0 12)
+         (Event 6000 (synth "beep" 66) 0 12)
+         (Event 6000 (synth "beep" 69) 0 12)))
+    
+  ;; simple loop test
+  (check-equal?
+   (stream->list
+    (uscore->score (list (loop 3
+                               (block (synth "beep" 60)
+                                      (psleep 1)))
+                         (synth "beep" 70))
+                   2000))
+   (list (Event 2000 (synth "beep" 60) 0 12)
+         (Event 3000 (void) 0 12)
+         (Event 3000 (synth "beep" 60) 0 12)
+         (Event 4000 (void) 0 12)
+         (Event 4000 (synth "beep" 60) 0 12)
+         (Event 5000 (void) 0 12)
+         (Event 5000 (synth "beep" 70) 0 12)))
   
-  (run-tests
-   (test-suite
-    "lsonic"
-    (check-equal? (play-now? 990) 'play)
-    (check-equal? (play-now? 1001) '(delay 721))
-    (set-vtime 2000)
-    (check-equal? (stream->list
-                   (uscore->score
-                    (list (synth "beep" 60)
-                          (psleep 4)
-                          (synth "beep" 66)
-                          (synth "beep" 69))))
-                  (list (list 2000 (synth "beep" 60))
-                        (list 6000 (synth "beep" 66))
-                        (list 6000 (synth "beep" 69))))
-    ;; man this test sure got complicated...
-    ;; because of stream not being transparent, I extracted
-    ;; the fx, then the score from that fx, and turned that
-    ;; into a list and checked it
-    (set-vtime 2000)
-    (check-equal? (stream->list
-                   (fx-block
-                    (second (second
-                     (stream->list
-                      (uscore->score
-                       (list (synth "beep" 60)
-                             (psleep 4)
-                             (fx "reverb"
-                                 (block (synth "beep" 60)
-                                       (psleep 4)
-                                       (sample "elec_blip")
-                                       (psleep 4)
-                                       (synth "beep" 60))))))))))
-                  (list (list 6000 (synth "beep" 60))
-                        (list 10000 (sample "elec_blip"))
-                        (list 14000 (synth "beep" 60)))))))
+  ;; simple fx test
+  (define fx_score (stream->list
+                    (uscore->score
+                     (list (fx "bitcrusher"
+                               (block (sample "ambi_choir")
+                                      (pisleep 2)))
+                           (synth "beep" 60))
+                     2000)))
+  (define fx_block (stream->list (fx-block (Event-uevent (first fx_score)))))
+  (check-equal? fx_block
+                (list (Event 2000 (sample "ambi_choir") 0 14)
+                      (Event 4000 (void) 0 14)))
+    )

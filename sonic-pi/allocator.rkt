@@ -6,9 +6,7 @@
 ;; that are needed in a few places
 (provide fresh-sync-id
          fresh-node-id!
-         fresh-bus-id
-         current-outbus
-         set-current-outbus)
+         fresh-bus-id)
 
 ;; each sync command should use a unique # per connection
 (define SYNC-ID (box 23))
@@ -33,11 +31,6 @@
 (define (fresh-bus-id)
   (set-box! OUT-BUS (+ 2 (unbox OUT-BUS)))
   (unbox OUT-BUS))
-
-;; current out bus
-(define CURR-OUT-BUS (box 12))
-(define (current-outbus) (unbox CURR-OUT-BUS))
-(define (set-current-outbus bus) (set-box! CURR-OUT-BUS bus))
 
 
 
