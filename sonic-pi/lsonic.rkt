@@ -15,12 +15,15 @@
 (provide (except-out (all-from-out racket) sleep #%module-begin)
          (rename-out [my-module-begin #%module-begin])
          synth
+         chord
          psleep
          sample
          fx
+         thread
          loop
          block
          choose
+         choose-list
          rrand
          rrand_i
          control)
@@ -46,6 +49,12 @@
 ;; - a (note ...), representing a note to be played at the current time, or
 ;; - a (sample ...), representing a sample to be played at the current time, or
 ;; - an (fx ... block), representing a sound effect to be applied to other uevents
+;; - a (thread block), representing a sound to be played in a new thread
+
+;; block is a closure around a list of uevents
+
+;; thread representings running a block at the same time as the rest of the user score
+(define-struct thread (block))
 
 ;; a score is (stream/c event) WITH NON-DECREASING TIMES
 ;; an event is a structure containing
@@ -54,8 +63,6 @@
 ;;  - a given bus
 (define-struct Event (vtime uevent inbus outbus) #:transparent)
 
-
-;; a block is a closure around a score
 
 ;; given a job-ctxt and an event, queue the event
 (define (queue-event job-ctxt evt)
@@ -198,10 +205,26 @@
                                     (uscore->score (rest uscore)
                                                    (Event-vtime (stream-ref fblock (sub1 (stream-length fblock))))
                                                    outbus)))]
-                    
+                    [(thread? (first uscore))
+                     (merge-score (uscore->score ((thread-block (first uscore))) vtime outbus)
+                                  (uscore->score (rest uscore) vtime outbus))]
                     [else (raise-argument-error 'uscore->score
                                                 "list of notes, sleeps, samples, loops, or fx's"
                                                 0 uscore vtime)])]))
+
+;; merge two scores together to simulate threading
+(define (merge-score score1 score2)
+  (cond
+    [(stream-empty? score1) score2]
+    [(stream-empty? score2) score1]
+    [else
+     (cond
+       [(<= (Event-vtime (stream-first score1))
+           (Event-vtime (stream-first score2)))
+        (stream-cons (stream-first score1)
+                     (merge-score (stream-rest score1) score2))]
+       [else (stream-cons (stream-first score2)
+                          (merge-score score1 (stream-rest score2)))])]))
 
 ;; the piece is scheduled to start this far in the future to give time
 ;; to get things started.
@@ -228,9 +251,10 @@
 
 ;; control a note, sample, or fx
 (define (control s . args)
-  (cond [(note? s) (control-note s args)]
-        [(sample? s) (control-sample s args)]
-        [(fx? s) (control-fx s args)]
+  (cond [(note? s) (apply control-note
+                          (flatten (list s args)))]
+        [(sample? s) (apply control-sample (flatten (list s args)))]
+        [(fx? s) (apply control-fx (flatten (list s args)))]
         [else (error 'control "not a note, sample, or fx")]))
 
 ;; create a loop structure, given a number of reps and a block 
@@ -244,6 +268,8 @@
 ;; choose from a variable amount of arguments
 (define (choose . args)
   (list-ref args (random (length args))))
+(define (choose-list l)
+  (list-ref l (random (length l))))
 
 ;; random in a range.
 ;; if the arguments are integers, it gets random integers ONLY
@@ -296,6 +322,10 @@
   (check-equal? (play-now? 990) 'play)
   (check-equal? (play-now? 1001) '(delay 721))
 
+  ;; test control
+  (check-equal? (control (note "beep" 60) "pan" 1 "decay" 0.5)
+                (control-note (note "beep" 60) "pan" 1 "decay" 0.5))
+
   ;; simple note and sleep test
   (check-equal?
    (stream->list
@@ -337,4 +367,48 @@
   (check-equal? fx_block
                 (list (Event 2000 (sample "ambi_choir") 0 14)
                       (Event 4000 (void) 0 14)))
-    )
+
+  ;; found bug where nested fx with no sleep does not play. let's see why
+  #;((define fx_top (stream->list (uscore->score (list (fx "bitcrusher"
+                                                        (block (fx "reverb"
+                                                                   (block (synth "beep" 60)
+                                                                          (synth "beep" 70))))))
+                                              2000)))
+  (define fx_mid (stream->list (fx-block (Event-uevent (first fx_top)))))
+  (define fx_bot (stream->list (fx-block (Event-uevent (first fx_mid)))))
+  (display fx_top)
+  (newline)
+  (display fx_mid)
+  (newline)
+  (display fx_bot)
+  (newline))
+
+  ;;thread tests
+  (check-equal?
+   (stream->list
+    (uscore->score (list (synth "blade" 50)
+                         (psleep 1)
+                         (thread (block
+                                  (synth "tb303" 50)))
+                         (psleep 1)
+                         (synth "blade" 50))
+                   2000))
+   (list (Event 2000 (synth "blade" 50) 0 12)
+         (Event 3000 (void) 0 12)
+         (Event 3000 (synth "tb303" 50) 0 12)
+         (Event 4000 (void) 0 12)
+         (Event 4000 (synth "blade" 50) 0 12)))
+  
+  (check-equal?
+   (stream->list
+    (uscore->score (list (synth "blade" 50)
+                         (psleep 1)
+                         (thread (block
+                                  (synth "tb303" 50)))
+                         (synth "blade" 50))
+                   2000))
+   (list (Event 2000 (synth "blade" 50) 0 12)
+         (Event 3000 (void) 0 12)
+         (Event 3000 (synth "tb303" 50) 0 12)
+         (Event 3000 (synth "blade" 50) 0 12))
+   ))

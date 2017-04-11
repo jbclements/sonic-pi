@@ -5,10 +5,22 @@
          "util.rkt")
 
 (provide note
+         chord
          note?
          note-name
          note-params
          control-note)
+
+;; hash table representing the intervals for different chords
+(: types (HashTable String (Listof Real)))
+(define types #hash(("major" . (0 4 7))
+                    ("minor" . (0 3 7))
+                    ("major7" . (0 4 7 11))
+                    ("dom7" . (0 4 7 10))
+                    ("minor7" . (0 3 7 10))
+                    ("aug" . (0 4 8))
+                    ("dim" . (0 3 6))
+                    ("dim7" . (0 3 6 9))))
 
 
 ;; a note has a distinguished synth name, then other params
@@ -126,6 +138,15 @@
   (Note (Note-name n)
         (complete-field-list (group-params param-parts) (Note-params n))))
 
+;; create a musical chord given the synth, pitch and chord type
+;; i.e. "beep" "e2" "minor"
+(: chord (String (U String Real) String -> (Listof Note)))
+(define (chord synth pitch type) ;; what is a better name for type?
+  (map (λ ([p : Real]) (note synth p))
+       (map (λ ([i : Real]) (+ (get-pitch pitch)
+                               i))
+        (hash-ref types type))))
+
 (module+ test
   (require typed/rackunit)
   (check-equal? (note->midi "C") 48)
@@ -224,4 +245,8 @@
                   (#"sustain_level" 1)
                   (#"env_curve" 2)
                   (#"out_bus" 12.0))))
+  (check-equal? (chord "beep" "e2" "minor")
+                (list (note "beep" 28)
+                      (note "beep" 31)
+                      (note "beep" 35)))
   )
