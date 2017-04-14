@@ -137,14 +137,14 @@
     ;"-m", "131072", "-D", "0", "-R", "0", "-l", "1", "-i", "16", "-o", "16", "-b", num_buffers_for_current_os.to_s,
     ;"-U", "#{native_path}/plugins/", "-B", "127.0.0.1")
     ['windows (process* SCSYNTH-PATH-WIN
-                        "-u" (number->string udp-port))
+                        "-u" (number->string udp-port)
                         "-m" "131071"
                         "-D" "0"
                         "-R" "0"
                         "-l" "1"
                         "-i" "16"
                         "-o" "16"
-                        "-B" "127.0.0.1"]
+                        "-B" "127.0.0.1")]
     [else (error 'startup "I don't recognize your operating system")]))
 
 ;; start the scsynth server:
