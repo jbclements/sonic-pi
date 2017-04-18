@@ -110,8 +110,8 @@
 
 ;; queue a block from fx with a new out_bus
 (define (queue-block job-ctxt block)
-  (stream-map (λ (s) (queue-event job-ctxt s))
-              block))
+  (map (λ (s) (queue-event job-ctxt s))
+              (stream->list block)))
 
 
 ;; given a job-ctxt and a list of events, queue them all.
@@ -173,11 +173,7 @@
                      ;; create an empty event with the new time
                      (let ([newtime (+ vtime (* MSEC-PER-SEC
                                                 (pisleep-duration (first uscore))))])
-                       (list newtime (second (uscore->score (rest uscore) newtime outbus)))
-                         #;(stream-cons (Event newtime (void) 0 outbus)
-                                      (uscore->score (rest uscore)
-                                                     newtime
-                                                     outbus)))]
+                       (uscore->score (rest uscore) newtime outbus))]
                     [(sample? (first uscore))
                      (let ([s (uscore->score (rest uscore) vtime outbus)])
                        (list (first s) (stream-cons (Event vtime (first uscore) 0 outbus)
@@ -205,8 +201,14 @@
                         (uscore->score (rest uscore)
                                        vtime
                                        outbus)]
-                       [else (let ([b (uscore->score ((Loop-block (first uscore))) vtime outbus)])
-                               (list (+ vtime
+                       [else (let* ([b (uscore->score ((Loop-block (first uscore))) vtime outbus)]
+                                   [r (uscore->score (append (list (sub1loop (first uscore)))
+                                                             (rest uscore))
+                                                     (first b)
+                                                     outbus)])
+                               (list (first r) (stream-append (second b)
+                                                              (second r)))
+                               #;(list (+ vtime
                                         (* (Loop-reps (first uscore))
                                         (- (first b) vtime))) (stream-append (second b)
                                                               (second (uscore->score

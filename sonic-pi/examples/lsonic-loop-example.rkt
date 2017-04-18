@@ -1,7 +1,6 @@
 #lang s-exp sonic-pi/lsonic
 
-
-#;((fx "bitcrusher"
+(fx "bitcrusher"
  (block
   (loop 4
         (block (sample "drum_heavy_kick")
@@ -9,7 +8,7 @@
               (sample "drum_cymbal_soft")
               (psleep 0.5)))))
 (loop 8
-      (block (sample "drum_cymbal_soft")
+      (block (sample "elec_blip")
            (psleep 0.25)
            (sample "bd_haus")
            (psleep 0.25)))
@@ -19,7 +18,4 @@
                       (sample "bd_tek")))
              ;; new and improved!
              (sample (choose "bd_ada" "bd_tek"))
-             (psleep 0.25))))
-
-(fx "bitcrusher"
-    (block (synth "bell" 60)))
+             (psleep 0.25)))
