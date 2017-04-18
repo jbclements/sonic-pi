@@ -110,8 +110,8 @@
 
 ;; queue a block from fx with a new out_bus
 (define (queue-block job-ctxt block)
-  (map (λ (s) (queue-event job-ctxt s))
-         (stream->list block)))
+  (stream-map (λ (s) (queue-event job-ctxt s))
+              block))
 
 
 ;; given a job-ctxt and a list of events, queue them all.
@@ -123,9 +123,11 @@
          (define e (stream-first score))
          (match (play-now? (current-lead e))
            ['play
+            (printf "Playing now!n")
             (queue-event job-ctxt e)
             (queue-events job-ctxt (stream-rest score))]
            [(list 'delay (? number? sleep-msec))
+            (printf "Sleeping!\n")
             (sleep (/ sleep-msec MSEC-PER-SEC))
                 ;; could keep statistics here...
             (queue-events job-ctxt score)])]))
@@ -161,26 +163,39 @@
 (define MSEC-PER-SEC 1000)
 
 ;; given a user score and a virtual time, produce a score associating
-;; a time with each note.
+;; a time with each note. Use store-passing style to return a list
+;; containing the end time and the stream of events
 ;; DANGER: loop with only sleep can lead to spaz-out...
 (define (uscore->score uscore vtime [outbus 12])
-  (cond [(empty? uscore) empty-stream]
+  (cond [(empty? uscore) (list vtime empty-stream)]
         [else (cond [(pisleep? (first uscore))
                      ;; because the last psleep can be ignored, let's
                      ;; create an empty event with the new time
                      (let ([newtime (+ vtime (* MSEC-PER-SEC
                                                 (pisleep-duration (first uscore))))])
-                         (stream-cons (Event newtime (void) 0 outbus)
+                       (list newtime (second (uscore->score (rest uscore) newtime outbus)))
+                         #;(stream-cons (Event newtime (void) 0 outbus)
                                       (uscore->score (rest uscore)
                                                      newtime
                                                      outbus)))]
                     [(sample? (first uscore))
-                     (stream-cons (Event vtime (first uscore) 0 outbus)
+                     (let ([s (uscore->score (rest uscore) vtime outbus)])
+                       (list (first s) (stream-cons (Event vtime (first uscore) 0 outbus)
+                                                    (second s))))
+                     #;(list vtime (stream-cons (Event vtime (first uscore) 0 outbus)
+                                              (second (uscore->score (rest uscore) vtime outbus))))
+                     #;(stream-cons (Event vtime (first uscore) 0 outbus)
                                   (uscore->score (rest uscore)
                                                  vtime
                                                  outbus))]
                     [(note? (first uscore))
-                     (stream-cons (Event vtime (first uscore) 0 outbus)
+                     (let ([s (uscore->score (rest uscore) vtime outbus)])
+                       (list (first s) (stream-cons (Event vtime (first uscore) 0 outbus)
+                                                    (second s))))
+                     #;(list vtime (stream-cons (Event vtime (first uscore) 0 outbus)
+                                              (second (uscore->score (rest uscore)
+                                                      vtime outbus))))
+                     #;(stream-cons (Event vtime (first uscore) 0 outbus)
                                   (uscore->score (rest uscore)
                                                  vtime
                                                  outbus))]
@@ -191,7 +206,15 @@
                                        vtime
                                        outbus)]
                        [else (let ([b (uscore->score ((Loop-block (first uscore))) vtime outbus)])
-                                 (stream-append b
+                               (list (+ vtime
+                                        (* (Loop-reps (first uscore))
+                                        (- (first b) vtime))) (stream-append (second b)
+                                                              (second (uscore->score
+                                                                       (append (list (sub1loop (first uscore)))
+                                                                               (rest uscore))
+                                                                       (first b)
+                                                                       outbus))))
+                               #;(stream-append b
                                           (uscore->score (append (list (sub1loop (first uscore)))
                                                                  (rest uscore))
                                                          (Event-vtime (stream-ref b (sub1 (stream-length b))))
@@ -201,15 +224,17 @@
                             [fblock (uscore->score ((fx-block (first uscore)))
                                                    vtime
                                                    newbus)])
-                       (stream-cons (Event vtime (set-block (first uscore) fblock) newbus outbus)
-                                    (uscore->score (rest uscore)
-                                                   (Event-vtime (stream-ref fblock (sub1 (stream-length fblock))))
-                                                   outbus)))]
+                       (list (first fblock)
+                             (stream-cons (Event vtime (set-block (first uscore) (second fblock)) newbus outbus)
+                                          (second (uscore->score (rest uscore)
+                                                         (first fblock)
+                                                         outbus)))))]
                     [(thread? (first uscore))
-                     (merge-score (uscore->score ((thread-block (first uscore))) vtime outbus)
-                                  (uscore->score (rest uscore) vtime outbus))]
+                     (list vtime
+                           (merge-score (second (uscore->score ((thread-block (first uscore))) vtime outbus))
+                                        (second (uscore->score (rest uscore) vtime outbus))))]
                     [else (raise-argument-error 'uscore->score
-                                                "list of notes, sleeps, samples, loops, or fx's"
+                                                "list of notes, sleeps, samples, loops, threads, or fx's"
                                                 0 uscore vtime)])]))
 
 ;; merge two scores together to simulate threading
@@ -233,9 +258,9 @@
 ;; play a user-score
 (define (play job-ctxt uscore)
   (queue-events job-ctxt
-                (uscore->score uscore
+                (second (uscore->score uscore
                                (+ (current-inexact-milliseconds)
-                                  START-MSEC-GAP))))
+                                  START-MSEC-GAP)))))
 
 ;; a pisleep is a number representing time in ms to sleep
 (struct pisleep (duration) #:prefab)
@@ -329,86 +354,84 @@
   ;; simple note and sleep test
   (check-equal?
    (stream->list
-    (uscore->score (list (synth "beep" 60)
+    (second (uscore->score (list (synth "beep" 60)
                          (psleep 4)
                          (synth "beep" 66)
                          (synth "beep" 69))
-                   2000))
+                   2000)))
    (list (Event 2000 (synth "beep" 60) 0 12)
-         (Event 6000 (void) 0 12)
          (Event 6000 (synth "beep" 66) 0 12)
          (Event 6000 (synth "beep" 69) 0 12)))
     
   ;; simple loop test
   (check-equal?
    (stream->list
-    (uscore->score (list (loop 3
+    (second (uscore->score (list (loop 3
                                (block (synth "beep" 60)
                                       (psleep 1)))
                          (synth "beep" 70))
-                   2000))
+                   2000)))
    (list (Event 2000 (synth "beep" 60) 0 12)
-         (Event 3000 (void) 0 12)
+         
          (Event 3000 (synth "beep" 60) 0 12)
-         (Event 4000 (void) 0 12)
+         
          (Event 4000 (synth "beep" 60) 0 12)
-         (Event 5000 (void) 0 12)
+         
          (Event 5000 (synth "beep" 70) 0 12)))
   
   ;; simple fx test
   (define fx_score (stream->list
-                    (uscore->score
+                    (second (uscore->score
                      (list (fx "bitcrusher"
                                (block (sample "ambi_choir")
                                       (pisleep 2)))
                            (synth "beep" 60))
-                     2000)))
+                     2000))))
   (define fx_block (stream->list (fx-block (Event-uevent (first fx_score)))))
   (check-equal? fx_block
                 (list (Event 2000 (sample "ambi_choir") 0 14)
-                      (Event 4000 (void) 0 14)))
+                      ))
 
-  ;; found bug where nested fx with no sleep does not play. let's see why
-  #;((define fx_top (stream->list (uscore->score (list (fx "bitcrusher"
-                                                        (block (fx "reverb"
-                                                                   (block (synth "beep" 60)
-                                                                          (synth "beep" 70))))))
-                                              2000)))
-  (define fx_mid (stream->list (fx-block (Event-uevent (first fx_top)))))
-  (define fx_bot (stream->list (fx-block (Event-uevent (first fx_mid)))))
-  (display fx_top)
-  (newline)
-  (display fx_mid)
-  (newline)
-  (display fx_bot)
-  (newline))
-
+ ;; timing test
+  (define fx_loop_score (uscore->score (list (fx "bitcrusher"
+                                                 (block (loop 4 (block
+                                                                 (synth "bell" 60)
+                                                                 (psleep 1))))))
+                                       2000))
+  (check-equal? (first fx_loop_score) 6000)
+  (check-equal? (stream->list (fx-block (Event-uevent (first (stream->list (second fx_loop_score))))))
+                (list (Event 2000 (synth "bell" 60) 0 16)
+                      (Event 3000 (synth "bell" 60) 0 16)
+                      (Event 4000 (synth "bell" 60) 0 16)
+                      (Event 5000 (synth "bell" 60) 0 16)))
+ 
   ;;thread tests
   (check-equal?
    (stream->list
-    (uscore->score (list (synth "blade" 50)
+    (second (uscore->score (list (synth "blade" 50)
                          (psleep 1)
                          (thread (block
                                   (synth "tb303" 50)))
                          (psleep 1)
                          (synth "blade" 50))
-                   2000))
+                   2000)))
    (list (Event 2000 (synth "blade" 50) 0 12)
-         (Event 3000 (void) 0 12)
+         ;(Event 3000 (void) 0 12)
          (Event 3000 (synth "tb303" 50) 0 12)
-         (Event 4000 (void) 0 12)
+         ;(Event 4000 (void) 0 12)
          (Event 4000 (synth "blade" 50) 0 12)))
   
   (check-equal?
    (stream->list
-    (uscore->score (list (synth "blade" 50)
+    (second
+     (uscore->score (list (synth "blade" 50)
                          (psleep 1)
                          (thread (block
                                   (synth "tb303" 50)))
                          (synth "blade" 50))
-                   2000))
+                   2000)))
    (list (Event 2000 (synth "blade" 50) 0 12)
-         (Event 3000 (void) 0 12)
+         ;(Event 3000 (void) 0 12)
          (Event 3000 (synth "tb303" 50) 0 12)
          (Event 3000 (synth "blade" 50) 0 12))
    ))
