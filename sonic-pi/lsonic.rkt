@@ -123,11 +123,9 @@
          (define e (stream-first score))
          (match (play-now? (current-lead e))
            ['play
-            (printf "Playing now!n")
             (queue-event job-ctxt e)
             (queue-events job-ctxt (stream-rest score))]
            [(list 'delay (? number? sleep-msec))
-            (printf "Sleeping!\n")
             (sleep (/ sleep-msec MSEC-PER-SEC))
                 ;; could keep statistics here...
             (queue-events job-ctxt score)])]))
@@ -177,24 +175,11 @@
                     [(sample? (first uscore))
                      (let ([s (uscore->score (rest uscore) vtime outbus)])
                        (list (first s) (stream-cons (Event vtime (first uscore) 0 outbus)
-                                                    (second s))))
-                     #;(list vtime (stream-cons (Event vtime (first uscore) 0 outbus)
-                                              (second (uscore->score (rest uscore) vtime outbus))))
-                     #;(stream-cons (Event vtime (first uscore) 0 outbus)
-                                  (uscore->score (rest uscore)
-                                                 vtime
-                                                 outbus))]
+                                                    (second s))))]
                     [(note? (first uscore))
                      (let ([s (uscore->score (rest uscore) vtime outbus)])
                        (list (first s) (stream-cons (Event vtime (first uscore) 0 outbus)
-                                                    (second s))))
-                     #;(list vtime (stream-cons (Event vtime (first uscore) 0 outbus)
-                                              (second (uscore->score (rest uscore)
-                                                      vtime outbus))))
-                     #;(stream-cons (Event vtime (first uscore) 0 outbus)
-                                  (uscore->score (rest uscore)
-                                                 vtime
-                                                 outbus))]
+                                                    (second s))))]
                     [(Loop? (first uscore))
                      (cond
                        [(zero? (Loop-reps (first uscore)))
@@ -207,20 +192,7 @@
                                                      (first b)
                                                      outbus)])
                                (list (first r) (stream-append (second b)
-                                                              (second r)))
-                               #;(list (+ vtime
-                                        (* (Loop-reps (first uscore))
-                                        (- (first b) vtime))) (stream-append (second b)
-                                                              (second (uscore->score
-                                                                       (append (list (sub1loop (first uscore)))
-                                                                               (rest uscore))
-                                                                       (first b)
-                                                                       outbus))))
-                               #;(stream-append b
-                                          (uscore->score (append (list (sub1loop (first uscore)))
-                                                                 (rest uscore))
-                                                         (Event-vtime (stream-ref b (sub1 (stream-length b))))
-                                                         outbus)))])]
+                                                              (second r))))])]
                     [(fx? (first uscore))
                      (let* ([newbus (fresh-bus-id)]
                             [fblock (uscore->score ((fx-block (first uscore)))
@@ -336,8 +308,8 @@
                          (raise exn))])
            (play job-ctxt (list e ...))
           )
-        (printf "waiting an arbitrary and hard-coded 15 seconds...\n")
-        (sleep 15)
+        (printf "waiting an arbitrary and hard-coded 20 seconds...\n")
+        (sleep 20)
         (printf "ending job...\n")
         (end-job job-ctxt)
         (printf "finished.\n"))]))

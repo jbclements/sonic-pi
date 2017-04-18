@@ -1,14 +1,5 @@
 #lang s-exp sonic-pi/lsonic
 
-#;((synth "prophet" 50)
-(psleep 1)
-
-(thread (block
-         (synth "tb303" 60)))
-
-#;(psleep 1)
-(synth "prophet" 50))
-
 (thread (block
          (fx "reverb" (block
               (loop 16 (block
