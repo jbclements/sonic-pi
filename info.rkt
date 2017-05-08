@@ -8,6 +8,8 @@
         "rackunit-lib"
         "typed-racket-lib"
         "typed-racket-more"
+        "gui-lib"
+        "drracket-plugin-lib"
         "htdp-lib"))
 
 (define build-deps
