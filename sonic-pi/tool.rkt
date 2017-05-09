@@ -27,34 +27,23 @@
                (new switchable-button%
                     (label "Play")
                     (callback (λ (button)
-                                (if (pressed?)
-                                    (update-score (get-definitions-text)
-                                                  ch)
-                                    (begin
-                                      (set-pressed)
-                                      (run-scsynth (get-definitions-text)
-                                                   ch)))))
+                                (update-user-score (get-definitions-text))))
                     (parent (get-button-panel))
                     (bitmap icon-play)))
               (stop-btn
                (new switchable-button%
                     (label "Stop")
                     (callback (λ (button)
-                                (set-box! pressed #f)))
+                                (send-stop)))
                     (parent (get-button-panel))
                     (bitmap icon-stop)))]
 	  (register-toolbar-buttons (list play-btn stop-btn))
           (send (get-button-panel) change-children
                 (λ (l)
-                  (cons play-btn (remq play-btn l))))
+                  (cons stop-btn (remq stop-btn l))))
           (send (get-button-panel) change-children
                 (λ (l)
-                  (cons stop-btn (remq stop-btn l)))))))
-
-    ;; let's define a box to keep track of whether the button was pressed once already
-    (define pressed (box #f))
-    (define (pressed?) (unbox pressed))
-    (define (set-pressed) (set-box! pressed #t))
+                  (cons play-btn (remq play-btn l)))))))
 
     (define icon-play
       (let* ((bmp (make-bitmap 16 16))
@@ -73,7 +62,20 @@
         (send bdc set-bitmap #f)
         bmp))
 
-    (define (run-scsynth text ch)
+    (define (update-user-score text)
+      (define uscore (string-append* (rest (string-split (send text get-text) "\n")))
+                                    )
+      (current-output-port (open-output-file (build-path "Documents" "soniclog.txt")
+                                             #:exists 'append))
+      (printf "updating user score with\n\t~v\n" uscore)
+      (thread-send (l-eval "(get-main-thread-descriptor)")
+                   (l-eval uscore)))
+
+    (define (send-stop)
+      (thread-send (get-main-thread-descriptor)
+                   'stop))
+
+    #;(define (run-scsynth text ch)
       #;(begin (random-seed 52)
              (current-output-port (open-output-file (build-path "."
                                                                 "soniclog.txt")
@@ -101,12 +103,7 @@
                (end-job job-ctxt)))
          0
       )
-    (define (update-score text ch)
-      #;(channel-put ch (l-eval (string-append
-                                       "(list"
-                                       (string-append* (rest (string-split (send text get-text) "\n")))
-                                       ")")))
-      0)
+    
 
     (define (phase1) (void))
     (define (phase2) (void))

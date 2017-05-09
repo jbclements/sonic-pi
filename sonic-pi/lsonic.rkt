@@ -9,6 +9,7 @@
   "fx.rkt"
   "scsynth/sample-loader.rkt"
   "allocator.rkt"
+  "loop.rkt"
   (for-syntax syntax/parse)
   rackunit)
 
@@ -19,14 +20,17 @@
          psleep
          sample
          fx
-         thread
+         thread_s
          loop
+         live_loop
          block
          choose
          choose-list
          rrand
          rrand_i
-         control)
+         control
+         l-eval
+         get-main-thread-descriptor)
 
 ;; all kinds of interesting interface questions here. Implicit sequence
 ;; wrapped around the whole thing? Implicit parallelism for loops next to
@@ -49,12 +53,13 @@
 ;; - a (note ...), representing a note to be played at the current time, or
 ;; - a (sample ...), representing a sample to be played at the current time, or
 ;; - an (fx ... block), representing a sound effect to be applied to other uevents
-;; - a (thread block), representing a sound to be played in a new thread
+;; - a (thread block), representing a sound to be played in a new thread,
+;; - a (live_loop name block), representing an infinite loop with live coding abilities
 
 ;; block is a closure around a list of uevents
 
 ;; thread representings running a block at the same time as the rest of the user score
-(define-struct thread (block))
+(define-struct thread_s (block))
 
 ;; a score is (stream/c event) WITH NON-DECREASING TIMES
 ;; an event is a structure containing
@@ -78,9 +83,44 @@
      (queue-fx job-ctxt (Event-uevent evt)
                (Event-vtime evt) (Event-inbus evt)
                (Event-outbus evt))]
-    ;; there are now void events for every sleep so we ignore those
-    [(void? (Event-uevent evt))
-     (void)]))
+    ;; when we encounter a live_loop, there are two cases
+    ;;  - the live loop already exists, so we send it a message
+    ;;  - the live loop does not exist, so we create it and save it
+    [(Live_Loop? (Event-uevent evt))
+     (let ([name (Live_Loop-name (Event-uevent evt))]
+           [block (Live_Loop-block (Event-uevent evt))])
+       (cond
+         [(thread-exists? name)
+          
+          (thread-send (get-thread-by-name name)
+                       (Event-uevent evt))]
+         [else
+          
+          (save-thread name (thread (λ ()
+                                           (play-forever job-ctxt evt)
+                                           )))]))
+     ]))
+
+;; live loop that queues a block, then checks
+;; for a new block value at each iteration.
+;; if a block value is found, we start playing that forver
+(define (play-forever job-ctxt evt)
+  (define score (uscore->score ((Live_Loop-block (Event-uevent evt)))
+                               (Event-vtime evt)))
+  
+  (queue-events job-ctxt
+                (second score))
+  (let ([new_evt (thread-try-receive)])
+    (if new_evt
+        (begin
+         (play-forever job-ctxt (Event (first score)
+                                      new_evt
+                                      (Event-inbus evt)
+                                      (Event-outbus evt))))
+        (play-forever job-ctxt (Event (first score)
+                                      (Event-uevent evt)
+                                      (Event-inbus evt)
+                                      (Event-outbus evt))))))
 
 ;; queue a given sample at the specified time
 (define (queue-sample job-ctxt samp time bus)
@@ -124,11 +164,25 @@
          (match (play-now? (current-lead e))
            ['play
             (queue-event job-ctxt e)
-            (queue-events job-ctxt (stream-rest score))]
+            (queue-events job-ctxt (stream-rest score))
+            #;(let ([evt (thread-try-receive)])
+              (if evt
+                  (begin
+                    (thread (λ () (queue-events job-ctxt
+                                                (stream-rest score))))
+                    (play job-ctxt evt))
+                  (queue-events job-ctxt (stream-rest score))))]
            [(list 'delay (? number? sleep-msec))
             (sleep (/ sleep-msec MSEC-PER-SEC))
+            (queue-events job-ctxt score)
                 ;; could keep statistics here...
-            (queue-events job-ctxt score)])]))
+            #;(let ([evt (thread-try-receive)])
+              (if evt
+                  (begin
+                    (thread (λ ()
+                              (queue-events job-ctxt score)))
+                    (play job-ctxt evt))
+                  (queue-events job-ctxt score)))])]))
 
 ;; given an event, return 'play to indicate it should be queued now
 ;; or '(delay n) to indicate that the program should sleep for n milliseconds
@@ -193,6 +247,11 @@
                                                      outbus)])
                                (list (first r) (stream-append (second b)
                                                               (second r))))])]
+                    [(Live_Loop? (first uscore))
+                     (let ([rst (uscore->score (rest uscore) vtime outbus)])
+                       (list (first rst)
+                             (stream-cons (Event vtime (first uscore) 0 outbus)
+                                          (second rst))))]
                     [(fx? (first uscore))
                      (let* ([newbus (fresh-bus-id)]
                             [fblock (uscore->score ((fx-block (first uscore)))
@@ -203,9 +262,9 @@
                                           (second (uscore->score (rest uscore)
                                                          (first fblock)
                                                          outbus)))))]
-                    [(thread? (first uscore))
+                    [(thread_s? (first uscore))
                      (list vtime
-                           (merge-score (second (uscore->score ((thread-block (first uscore))) vtime outbus))
+                           (merge-score (second (uscore->score ((thread_s-block (first uscore))) vtime outbus))
                                         (second (uscore->score (rest uscore) vtime outbus))))]
                     [else (raise-argument-error 'uscore->score
                                                 "list of notes, sleeps, samples, loops, threads, or fx's"
@@ -231,16 +290,32 @@
 
 ;; play a user-score
 (define (play job-ctxt uscore)
+  (printf "Playing user score\n")
   (queue-events job-ctxt
                 (second (uscore->score uscore
-                               (+ (current-inexact-milliseconds)
-                                  START-MSEC-GAP)))))
+                                       (+ (current-inexact-milliseconds)
+                                          START-MSEC-GAP))))
+  (listen-for-messages job-ctxt))
+
+;; listens for messages to either play a new uscore
+;; or stop everything
+(define (listen-for-messages job-ctxt)
+  (let ([evt (thread-receive)])
+    (if (equal? evt 'stop)
+        (begin (kill-all-threads)
+               (end-job job-ctxt))
+        (begin
+          (printf "Playing a new user score\n")
+          (thread
+           (λ () (queue-events job-ctxt
+                        (second (uscore->score (list evt)
+                                               (+ (current-inexact-milliseconds)
+                                                  START-MSEC-GAP))))))
+          (listen-for-messages job-ctxt)))))
 
 ;; a pisleep is a number representing time in ms to sleep
 (struct pisleep (duration) #:prefab)
-;; a loop is a number representing the number of reps and
-;; a block, which is a closure over a user score
-(struct Loop (reps block))
+
 ;; a simple rand structure to select a random event from a small score
 (struct Rand (block))
 
@@ -255,14 +330,6 @@
         [(sample? s) (apply control-sample (flatten (list s args)))]
         [(fx? s) (apply control-fx (flatten (list s args)))]
         [else (error 'control "not a note, sample, or fx")]))
-
-;; create a loop structure, given a number of reps and a block 
-(define (loop reps block)
-  (Loop reps block))
-;; create new loop where the number of reps is one less than the one supplied
-(define (sub1loop lp)
-  (Loop (sub1 (Loop-reps lp))
-        (Loop-block lp)))
 
 ;; choose from a variable amount of arguments
 (define (choose . args)
@@ -285,6 +352,27 @@
                    (add1 (+ diff max)))
            diff))))
 
+;;
+;; for the button to work, we need to tell
+;; it the descriptor of the main thread,
+;; and we need to give it an eval function
+;; to rerun the code without rerunning.
+;;
+
+; descriptor for the main playing thread
+(define (get-main-thread-descriptor)
+  (get-thread-by-name "sonic-pi-main"))
+
+;; let's provide a function to evaluate
+;; the definitions-text the button gets
+;; borrowed from
+;;  http://stackoverflow.com/questions/10399315/how-to-eval-strings-in-racket
+(define-namespace-anchor anc)
+(define ns (namespace-anchor->namespace anc))
+(define (l-eval text)
+  (eval (read (open-input-string text)) ns)
+  )
+
 
 ;; a block is a closure around a block of user score
 ;; this is a nasty macro. is there a better way?
@@ -301,18 +389,23 @@
         (random-seed 52) ;; totally arbitrary
         (define ctxt (startup))
         (define job-ctxt (start-job ctxt))
-        (with-handlers
-           ([exn:fail? (lambda (exn)
-                         (printf "ending job due to error...\n")
-                         (end-job job-ctxt)
-                         (raise exn))])
-           (play job-ctxt (list e ...))
-          )
-        (printf "waiting an arbitrary and hard-coded 20 seconds...\n")
-        (sleep 20)
-        (printf "ending job...\n")
+        (save-thread
+         "sonic-pi-main"
+           (thread
+            (λ ()
+              (with-handlers
+                  ([exn:fail? (lambda (exn)
+                                (printf "ending job due to error...\n")
+                                (end-job job-ctxt)
+                                (raise exn))])
+                (play job-ctxt (list e ...))))))
+        (wait-on-all-threads)
         (end-job job-ctxt)
-        (printf "finished.\n"))]))
+        #;(printf "waiting an arbitrary and hard-coded 20 seconds...\n")
+        #;(sleep 20)
+        #;(printf "ending job...\n")
+        #;(end-job job-ctxt)
+        #;(printf "finished.\n"))]))
 
 (module+ test
   (require rackunit
@@ -384,7 +477,7 @@
    (stream->list
     (second (uscore->score (list (synth "blade" 50)
                          (psleep 1)
-                         (thread (block
+                         (thread_s (block
                                   (synth "tb303" 50)))
                          (psleep 1)
                          (synth "blade" 50))
@@ -400,12 +493,33 @@
     (second
      (uscore->score (list (synth "blade" 50)
                          (psleep 1)
-                         (thread (block
+                         (thread_s (block
                                   (synth "tb303" 50)))
                          (synth "blade" 50))
                    2000)))
    (list (Event 2000 (synth "blade" 50) 0 12)
          ;(Event 3000 (void) 0 12)
          (Event 3000 (synth "tb303" 50) 0 12)
-         (Event 3000 (synth "blade" 50) 0 12))
-   ))
+         (Event 3000 (synth "blade" 50) 0 12)))
+
+  ;; small system test
+  (define ctxt (startup))
+  (define job-ctxt (start-job ctxt))
+  (define t1 (thread
+              (λ ()
+                (play job-ctxt
+                      (list (Live_Loop "test1"
+                                  (block (sample "loop_garzul")
+                                         (synth "prophet" "e1"
+                                                "release" 8)
+                                         (psleep 8))))))))
+  (sleep 4)
+  (thread-send t1 (Live_Loop "test1"
+                              (block (sample "loop_garzul")
+                                         (synth "beep" 60
+                                                "release" 8)
+                                         (psleep 8))))
+  (sleep 40)
+  (thread-send t1 'stop)
+  )
+
