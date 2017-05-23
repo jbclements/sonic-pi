@@ -291,10 +291,13 @@
 ;; play a user-score
 (define (play job-ctxt uscore)
   #;(printf "Playing user score\n")
-  (queue-events job-ctxt
-                (second (uscore->score uscore
-                                       (+ (current-inexact-milliseconds)
-                                          START-MSEC-GAP))))
+  (save-thread "lsonic-main-thread"
+               (thread
+                (λ()
+                  (queue-events job-ctxt
+                                (second (uscore->score uscore
+                                                       (+ (current-inexact-milliseconds)
+                                                          START-MSEC-GAP)))))))
   (listen-for-messages job-ctxt))
 
 ;; listens for messages to either play a new uscore
@@ -306,11 +309,37 @@
                (end-job job-ctxt))
         (begin
           #;(printf "Main thread message: ~v\n" evt)
-          (thread
-           (λ () (queue-events job-ctxt
-                        (second (uscore->score (l-eval evt)
-                                               (current-inexact-milliseconds))))))
+          (save-thread "lsonic-main-thread"
+                       (thread
+                        (λ () (queue-events job-ctxt
+                                            (second (uscore->score (l-eval evt)
+                                                                   (current-inexact-milliseconds)))))))
+          
           (listen-for-messages job-ctxt)))))
+;; listens for messages by polling because it also wants to check and see if any threads
+;; are still running. If no threads are running, there is no live_loop, so it's a one-time
+;; run and we should stop
+#;(define (listen-for-messages job-ctxt)
+  (let ([evt (thread-try-receive)])
+    (cond
+      ;; if all threads are dead, we have no live loops, thus nothing to update
+      [(all-threads-dead?) (end-job job-ctxt)]
+      ;; didn't get a message. keep going
+      [(not evt) (listen-for-messages job-ctxt)]
+      ;; stop button pressed
+      [(equal? evt 'stop) (begin
+                            (kill-all-threads)
+                            (end-job job-ctxt))]
+      ;; got a user score
+      [else (begin
+              (save-thread
+               "lsonic-main-thread"
+               (thread
+                (λ ()
+                  (queue-events
+                   job-ctxt
+                   (second (uscore->score (l-eval evt)
+                                          (current-inexact-milliseconds))))))))])))
 
 ;; a pisleep is a number representing time in ms to sleep
 (struct pisleep (duration) #:prefab)

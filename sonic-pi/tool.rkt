@@ -69,7 +69,7 @@
     (define main-thread #f)
     ;; get's the thread descriptor for the main thread
     (define (get-main-thread receiver)
-      (if main-thread
+      (if (and main-thread (not (thread-dead? main-thread)))
           main-thread
           (begin
             (match (sync/timeout 3 receiver)

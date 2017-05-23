@@ -7,11 +7,6 @@
 ;; one for samples
 (define thread-buffer (make-hash))
 
-;; called by the buttons, this sends a UDP message
-;; to the button on the given port
-(define (get-main-thread port)
-  (hash-ref thread-buffer "sonic-pi-main"))
-
 ;; determines if a thread already exists in the buffer
 (define (thread-exists? name)
   (hash-ref thread-buffer name (λ () #false)))
@@ -32,3 +27,6 @@
 (define (kill-all-threads)
   (map kill-thread (hash-values thread-buffer)))
 
+;; all threads are dead
+(define (all-threads-dead?)
+  (andmap thread-dead? (hash-values thread-buffer)))

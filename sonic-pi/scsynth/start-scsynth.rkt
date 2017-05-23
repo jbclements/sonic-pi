@@ -155,11 +155,13 @@
 ;; the ports remain in use and jack hijacks your audio
 ;; for all other programs
 (define (shutdown-scsynth)
+  (printf "Shutting down scsynth...");
+  (flush-output)
   (match (system-type)
     ['windows (process "Taskkill /IM scsynth.exe /F")]
     [else (begin (process "killall -9 jackd")
                  (process "killall -9 scsynth"))])
-  (void))
+  (printf "done\n"))
 
 (module+ test
   (require rackunit)
