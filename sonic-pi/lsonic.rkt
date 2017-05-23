@@ -9,6 +9,7 @@
   "fx.rkt"
   "scsynth/sample-loader.rkt"
   "allocator.rkt"
+  "thread-communication.rkt"
   "loop.rkt"
   (for-syntax syntax/parse)
   rackunit)
@@ -29,8 +30,18 @@
          rrand
          rrand_i
          control
-         l-eval
-         get-main-thread-descriptor)
+         play
+         )
+
+;; let's provide a function to evaluate
+;; the definitions-text the button gets.
+;; borrowed from
+;;  http://stackoverflow.com/questions/10399315/how-to-eval-strings-in-racket
+(define-namespace-anchor anc)
+(define ns (namespace-anchor->namespace anc))
+(define (l-eval text)
+  (eval (read (open-input-string text)) ns)
+  )
 
 ;; all kinds of interesting interface questions here. Implicit sequence
 ;; wrapped around the whole thing? Implicit parallelism for loops next to
@@ -91,14 +102,14 @@
            [block (Live_Loop-block (Event-uevent evt))])
        (cond
          [(thread-exists? name)
-          
+          #;(printf "Updating Live_loop: ~v\n" name)
           (thread-send (get-thread-by-name name)
                        (Event-uevent evt))]
          [else
-          
+          #;(printf "Sending off Live_Loop: ~v\n"  name)
           (save-thread name (thread (λ ()
-                                           (play-forever job-ctxt evt)
-                                           )))]))
+                                      (play-forever job-ctxt evt)
+                                      )))]))
      ]))
 
 ;; live loop that queues a block, then checks
@@ -106,17 +117,19 @@
 ;; if a block value is found, we start playing that forver
 (define (play-forever job-ctxt evt)
   (define score (uscore->score ((Live_Loop-block (Event-uevent evt)))
-                               (Event-vtime evt)))
+                               (Event-vtime evt)
+                               (Event-outbus evt)))
   
   (queue-events job-ctxt
                 (second score))
   (let ([new_evt (thread-try-receive)])
     (if new_evt
         (begin
-         (play-forever job-ctxt (Event (first score)
-                                      new_evt
-                                      (Event-inbus evt)
-                                      (Event-outbus evt))))
+          #;(printf "New event! ~v\n" new_evt)
+          (play-forever job-ctxt (Event (first score)
+                                        new_evt
+                                        (Event-inbus evt)
+                                        (Event-outbus evt))))
         (play-forever job-ctxt (Event (first score)
                                       (Event-uevent evt)
                                       (Event-inbus evt)
@@ -164,25 +177,12 @@
          (match (play-now? (current-lead e))
            ['play
             (queue-event job-ctxt e)
-            (queue-events job-ctxt (stream-rest score))
-            #;(let ([evt (thread-try-receive)])
-              (if evt
-                  (begin
-                    (thread (λ () (queue-events job-ctxt
-                                                (stream-rest score))))
-                    (play job-ctxt evt))
-                  (queue-events job-ctxt (stream-rest score))))]
+            (queue-events job-ctxt (stream-rest score))]
            [(list 'delay (? number? sleep-msec))
             (sleep (/ sleep-msec MSEC-PER-SEC))
             (queue-events job-ctxt score)
                 ;; could keep statistics here...
-            #;(let ([evt (thread-try-receive)])
-              (if evt
-                  (begin
-                    (thread (λ ()
-                              (queue-events job-ctxt score)))
-                    (play job-ctxt evt))
-                  (queue-events job-ctxt score)))])]))
+            ])]))
 
 ;; given an event, return 'play to indicate it should be queued now
 ;; or '(delay n) to indicate that the program should sleep for n milliseconds
@@ -290,7 +290,7 @@
 
 ;; play a user-score
 (define (play job-ctxt uscore)
-  (printf "Playing user score\n")
+  #;(printf "Playing user score\n")
   (queue-events job-ctxt
                 (second (uscore->score uscore
                                        (+ (current-inexact-milliseconds)
@@ -305,12 +305,11 @@
         (begin (kill-all-threads)
                (end-job job-ctxt))
         (begin
-          (printf "Playing a new user score\n")
+          #;(printf "Main thread message: ~v\n" evt)
           (thread
            (λ () (queue-events job-ctxt
-                        (second (uscore->score (list evt)
-                                               (+ (current-inexact-milliseconds)
-                                                  START-MSEC-GAP))))))
+                        (second (uscore->score (l-eval evt)
+                                               (current-inexact-milliseconds))))))
           (listen-for-messages job-ctxt)))))
 
 ;; a pisleep is a number representing time in ms to sleep
@@ -352,27 +351,6 @@
                    (add1 (+ diff max)))
            diff))))
 
-;;
-;; for the button to work, we need to tell
-;; it the descriptor of the main thread,
-;; and we need to give it an eval function
-;; to rerun the code without rerunning.
-;;
-
-; descriptor for the main playing thread
-(define (get-main-thread-descriptor)
-  (get-thread-by-name "sonic-pi-main"))
-
-;; let's provide a function to evaluate
-;; the definitions-text the button gets
-;; borrowed from
-;;  http://stackoverflow.com/questions/10399315/how-to-eval-strings-in-racket
-(define-namespace-anchor anc)
-(define ns (namespace-anchor->namespace anc))
-(define (l-eval text)
-  (eval (read (open-input-string text)) ns)
-  )
-
 
 ;; a block is a closure around a block of user score
 ;; this is a nasty macro. is there a better way?
@@ -389,23 +367,21 @@
         (random-seed 52) ;; totally arbitrary
         (define ctxt (startup))
         (define job-ctxt (start-job ctxt))
-        (save-thread
-         "sonic-pi-main"
-           (thread
-            (λ ()
-              (with-handlers
-                  ([exn:fail? (lambda (exn)
-                                (printf "ending job due to error...\n")
-                                (end-job job-ctxt)
-                                (raise exn))])
-                (play job-ctxt (list e ...))))))
-        (wait-on-all-threads)
-        (end-job job-ctxt)
-        #;(printf "waiting an arbitrary and hard-coded 20 seconds...\n")
-        #;(sleep 20)
-        #;(printf "ending job...\n")
-        #;(end-job job-ctxt)
-        #;(printf "finished.\n"))]))
+        (define lsonic (make-logger 'lsonic
+                                    (current-logger)))
+        (log-message lsonic
+                     'info
+                     'lsonic
+                     "main thread"
+                     (thread
+                      (λ ()
+                        (with-handlers
+                            ([exn:fail? (lambda (exn)
+                                          (printf "ending job due to error...\n")
+                                          (end-job job-ctxt)
+                                          (raise exn))])
+                          (play job-ctxt (list e ...))))))
+        )]))
 
 (module+ test
   (require rackunit
@@ -513,13 +489,13 @@
                                          (synth "prophet" "e1"
                                                 "release" 8)
                                          (psleep 8))))))))
-  (sleep 4)
-  (thread-send t1 (Live_Loop "test1"
-                              (block (sample "loop_garzul")
-                                         (synth "beep" 60
-                                                "release" 8)
-                                         (psleep 8))))
-  (sleep 40)
+  (sleep 4) 
+  (thread-send t1 "(list (live_loop \"test1\"
+                              (block (sample \"loop_garzul\")
+                                         (synth \"beep\" 60
+                                                \"release\" 8)
+                                         (psleep 8))))")
+  (sleep 20)
   (thread-send t1 'stop)
   )
 

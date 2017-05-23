@@ -1,13 +1,13 @@
 #lang s-exp sonic-pi/lsonic
 
-(thread (block
-         (fx "reverb" (block
-              (loop 16 (block
-                       (sample "ambi_choir" "rate" (choose 0.5
-                                                           (/ 1.0 3)
-                                                           (/ 3.0 5))
-                               "pan" (rrand -1 1))
-                       (psleep 0.5)))))))
+(thread_s (block
+           (fx "reverb" (block
+                         (loop 16 (block
+                                   (sample "ambi_choir" "rate" (choose 0.5
+                                                                       (/ 1.0 3)
+                                                                       (/ 3.0 5))
+                                           "pan" (rrand -1 1))
+                                   (psleep 0.5)))))))
 
 (fx "wobble" "phase" 2
     (block (fx "echo" "mix" 0.6
