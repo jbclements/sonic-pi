@@ -79,9 +79,19 @@
 ;;  - a given bus
 (define-struct Event (vtime uevent inbus outbus) #:transparent)
 
+(define (print-uevent evt vtime)
+  (cond
+    [(sample? evt) (printf "Sample ~v @ ~v\n"
+                           (sample-name evt)
+                           vtime)]
+    [(note? evt) (printf "Note ~v @ ~v\n"
+                         (note-name evt)
+                         vtime)]
+    ))
 
 ;; given a job-ctxt and an event, queue the event
 (define (queue-event job-ctxt evt)
+  (print-uevent (Event-uevent evt) (Event-vtime evt))
   (cond
     [(sample? (Event-uevent evt))
      (queue-sample job-ctxt (Event-uevent evt) (Event-vtime evt) (Event-outbus evt))]

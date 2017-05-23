@@ -6,7 +6,7 @@
                       (block (sample "guit_e_fifths"
                                      "rate" 0.5)
                              
-                             (sample "guit_em9" "rate" 0.5)
+                             #;(sample "guit_em9" "rate" 0.5)
                              (psleep 8)))))
 
 (fx "reverb"

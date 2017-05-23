@@ -3,7 +3,8 @@
          racket/class
          racket/gui/base
          racket/unit
-         mrlib/switchable-button)
+         mrlib/switchable-button
+         "scsynth/start-scsynth.rkt")
 
 (provide tool@)
 
@@ -87,11 +88,18 @@
       #;(printf "updating user score with\n\t~v\n" uscore)
       (thread-send (get-main-thread receiver)
                    uscore))
-    ;; sends the main thread a 'stop signal
+    ;; sends the main thread a 'stop signal. if the thread is not to be
+    ;; found, it still tries to stop scsynth in case of error
     (define (send-stop receiver)
-      (thread-send (get-main-thread receiver)
-                   'stop)
-      (set! main-thread #f))
+      (with-handlers
+          ([exn:fail? (lambda (exn)
+                        (printf "ending job due to error...\n")
+                        (shutdown-scsynth)
+                        (error 'send-stop "unable to find thread. attempting to shut down scsynth"))])
+        
+        (thread-send (get-main-thread receiver)
+                     'stop)
+        (set! main-thread #f)))
 
     (define (phase1) (void))
     (define (phase2) (void))
