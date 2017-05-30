@@ -16,8 +16,6 @@
 
 (define-runtime-path here ".")
 (define SCSYNTH-PATH-MAC (build-path here "scsynth"))
-;; NB: requires SuperCollider-3.8.0 on C drive. Way too restrictive.
-(define SCSYNTH-PATH-WIN (build-path "C://Program Files//SuperCollider-3.8.0//scsynth.exe"))
 
 ;; honestly, all of this machinery is a bit silly.
 (define rng (vector->pseudo-random-generator
@@ -136,7 +134,18 @@
     ;boot_and_wait(scsynth_path, "-u", @port.to_s, "-a", num_audio_busses_for_current_os.to_s,
     ;"-m", "131072", "-D", "0", "-R", "0", "-l", "1", "-i", "16", "-o", "16", "-b", num_buffers_for_current_os.to_s,
     ;"-U", "#{native_path}/plugins/", "-B", "127.0.0.1")
-    ['windows (process* SCSYNTH-PATH-WIN
+    ['windows
+     ;; find the SuperCollider folder in C:\\Program Files   
+     (define SCSYNTH-PROG-PATH (filter (λ (p)
+                                         (string-contains?
+                                          (path->string (file-name-from-path p))
+                                          "SuperCollider"))
+                                       (directory-list "C:\\Program Files")))
+     (when (empty? SCSYNTH-PROG-PATH) (error 'startup "Could not find SuperCollider. Is it installed to C:\\Program Files?"))
+     (define SCSYNTH-PATH-WIN (build-path (path->complete-path (first SCSYNTH-PROG-PATH)
+                                                               "C:\\Program Files")
+                                          "scsynth.exe"))
+     (process* SCSYNTH-PATH-WIN
                         "-u" (number->string udp-port)
                         "-m" "131071"
                         "-D" "0"

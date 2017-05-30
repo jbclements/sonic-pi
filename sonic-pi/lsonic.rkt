@@ -276,9 +276,14 @@
                      (list vtime
                            (merge-score (second (uscore->score ((thread_s-block (first uscore))) vtime outbus))
                                         (second (uscore->score (rest uscore) vtime outbus))))]
+                    ;; a list means it's a chord
+                    [(list? (first uscore))
+                     (uscore->score (append (first uscore) (rest uscore))
+                                    vtime outbus)]
                     [else (raise-argument-error 'uscore->score
                                                 "list of notes, sleeps, samples, loops, threads, or fx's"
                                                 0 uscore vtime)])]))
+
 
 ;; merge two scores together to simulate threading
 (define (merge-score score1 score2)
@@ -371,13 +376,13 @@
 
 ;; choose from a variable amount of arguments
 (define (choose . args)
-  (list-ref args (random (length args))))
+  (if (andmap list? args)
+      (choose-list (flatten args))
+      (list-ref args (random (length args)))))
 (define (choose-list l)
   (list-ref l (random (length l))))
 
 ;; random in a range.
-;; if the arguments are integers, it gets random integers ONLY
-;; if the arguments are floats, it calculates a random float
 (define (rrand min max)
   (+ min (* (- max min) (random))))
 
