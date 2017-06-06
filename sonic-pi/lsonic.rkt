@@ -11,6 +11,7 @@
   "allocator.rkt"
   "thread-communication.rkt"
   "loop.rkt"
+  "rand.rkt"
   (for-syntax syntax/parse)
   rackunit)
 
@@ -51,8 +52,9 @@
 ;; - (pisleep ...), representing the passage of time, or
 ;; - a (note ...), representing a note to be played at the current time, or
 ;; - a (sample ...), representing a sample to be played at the current time, or
-;; - an (fx ... block), representing a sound effect to be applied to other uevents
-;; - a (thread block), representing a sound to be played in a new thread,
+;; - an (fx ... block), representing a sound effect to be applied to other uevents, or
+;; - a (thread block), representing a sound to be played in a new thread, or
+;; - a (loop reps block), representing a finite loop to played reps times, or
 ;; - a (live_loop name block), representing an infinite loop with live coding abilities
 
 ;; block is a closure around a list of uevents
@@ -62,27 +64,35 @@
 
 ;; a score is (stream/c event) WITH NON-DECREASING TIMES
 ;; an event is a structure containing
-;;  - the virtual time relative to (current-inexact-milliseconds)
 ;;  - the uevent to be run
-;;  - a given bus
+;;  - the virtual time relative to (current-inexact-milliseconds)
+;;  - a given bus with which to receive sounds (for fx only)
+;;  - a given bus with which to send sounds
 (define-struct Event (vtime uevent inbus outbus) #:transparent)
 
-(define (print-uevent evt vtime)
-  (cond
-    [(sample? evt) (printf "Sample ~v\n  @ ~v\n"
-                           (sample-name evt)
-                           vtime)]
-    [(note? evt) (printf "Note ~v\n  @ ~v\n"
-                         (note-name evt)
-                         vtime)]
-    [(fx? evt) (printf "FX ~v\n  @ ~v\n"
-               (fx-name evt)
-               vtime)]
-    ))
+(define (print-event evt)
+  (printf "Event: ~v\n  @ ~v\n  in: ~v\n out: ~v\n"
+          (cond
+            [(sample? (Event-uevent evt))
+             (string-append "Sample ~ "
+                            (bytes->string/utf-8
+                             (sample-name (Event-uevent evt))))]
+            [(note? (Event-uevent evt)) (string-append "Note ~ "
+                                  (bytes->string/utf-8
+                                   (note-name (Event-uevent evt))))]
+            [(fx? (Event-uevent evt)) (string-append "FX ~ "
+                                (bytes->string/utf-8
+                                 (fx-name (Event-uevent evt))))]
+            [(Live_Loop? (Event-uevent evt)) (string-append "Live Loop ~ "
+                                                            (Live_Loop-name (Event-uevent evt)))]
+            )
+          (Event-vtime evt)
+          (Event-inbus evt)
+          (Event-outbus evt)))
 
 ;; given a job-ctxt and an event, queue the event
 (define (queue-event job-ctxt evt)
-  (print-uevent (Event-uevent evt) (Event-vtime evt))
+  (print-event evt)
   (cond
     [(sample? (Event-uevent evt))
      (queue-sample job-ctxt (Event-uevent evt) (Event-vtime evt) (Event-outbus evt))]
@@ -115,7 +125,7 @@
 
 ;; live loop that queues a block, then checks
 ;; for a new block value at each iteration.
-;; if a block value is found, we start playing that forver
+;; if a block value is found, we start playing that forever
 (define (play-forever job-ctxt evt)
   (define score (uscore->score ((Live_Loop-block (Event-uevent evt)))
                                (Event-vtime evt)
@@ -243,7 +253,7 @@
                                (list (first r) (stream-append (second b)
                                                               (second r))))])]
                     [(Live_Loop? (first uscore))
-                     (let ([rst (uscore->score (rest uscore) vtime outbus)])
+                     (let ([rst (uscore->score (rest uscore) vtime outbus)]) 
                        (list (first rst)
                              (stream-cons (Event vtime (first uscore) 0 outbus)
                                           (second rst))))]
@@ -251,12 +261,11 @@
                      (let* ([newbus (fresh-bus-id)]
                             [fblock (uscore->score ((fx-block (first uscore)))
                                                    vtime
-                                                   newbus)])
-                       (list (first fblock)
+                                                   newbus)]
+                            [restblock (uscore->score (rest uscore) (first fblock) outbus)])
+                       (list (first restblock)
                              (stream-cons (Event vtime (set-block (first uscore) (second fblock)) newbus outbus)
-                                          (second (uscore->score (rest uscore)
-                                                         (first fblock)
-                                                         outbus)))))]
+                                          (second restblock))))]
                     [(thread_s? (first uscore))
                      (list vtime
                            (merge-score (second (uscore->score ((thread_s-block (first uscore))) vtime outbus))
@@ -330,9 +339,6 @@
 ;; a pisleep is a number representing time in ms to sleep
 (struct pisleep (duration) #:prefab)
 
-;; a simple rand structure to select a random event from a small score
-(struct Rand (block))
-
 ;; create a pisleep structure
 (define (psleep t)
   (pisleep t))
@@ -344,27 +350,6 @@
         [(sample? s) (apply control-sample (flatten (list s args)))]
         [(fx? s) (apply control-fx (flatten (list s args)))]
         [else (error 'control "not a note, sample, or fx")]))
-
-;; choose from a variable amount of arguments
-(define (choose . args)
-  (if (andmap list? args)
-      (choose-list (flatten args))
-      (list-ref args (random (length args)))))
-(define (choose-list l)
-  (list-ref l (random (length l))))
-
-;; random in a range.
-(define (rrand min max)
-  (+ min (* (- max min) (random))))
-
-;; random integer in any range, inclusive
-(define (rrand_i min max)
-  (if (> min 0)
-      (random min max)
-      (let ([diff (- 1 min)])
-        (- (random (+ diff min)
-                   (add1 (+ diff max)))
-           diff))))
 
 
 ;; a block is a closure around a block of user score
@@ -457,8 +442,7 @@
                      2000))))
   (define fx_block (stream->list (fx-block (Event-uevent (first fx_score)))))
   (check-equal? fx_block
-                (list (Event 2000 (sample "ambi_choir") 0 14)
-                      ))
+                (list (Event 2000 (sample "ambi_choir") 0 14)))
 
  ;; timing test
   (define fx_loop_score (uscore->score (list (fx "bitcrusher"
@@ -519,7 +503,8 @@
                               (block (sample \"loop_garzul\" \"amp\" 0.25)
                                      (fx \"echo\"
                                          (block (synth \"beep\" \"e1\" \"release\" 4)
-                                                (psleep 8))))))")
+                                                ))
+                                     (psleep 8))))")
   (sleep 30)
   (thread-send t1 'stop)
   )
