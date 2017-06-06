@@ -29,19 +29,7 @@
          choose-list
          rrand
          rrand_i
-         control
-         play
-         )
-
-;; let's provide a function to evaluate
-;; the definitions-text the button gets.
-;; borrowed from
-;;  http://stackoverflow.com/questions/10399315/how-to-eval-strings-in-racket
-(define-namespace-anchor anc)
-(define ns (namespace-anchor->namespace anc))
-(define (l-eval text)
-  (eval (read (open-input-string text)) ns)
-  )
+         control)
 
 ;; all kinds of interesting interface questions here. Implicit sequence
 ;; wrapped around the whole thing? Implicit parallelism for loops next to
@@ -81,12 +69,15 @@
 
 (define (print-uevent evt vtime)
   (cond
-    [(sample? evt) (printf "Sample ~v @ ~v\n"
+    [(sample? evt) (printf "Sample ~v\n  @ ~v\n"
                            (sample-name evt)
                            vtime)]
-    [(note? evt) (printf "Note ~v @ ~v\n"
+    [(note? evt) (printf "Note ~v\n  @ ~v\n"
                          (note-name evt)
                          vtime)]
+    [(fx? evt) (printf "FX ~v\n  @ ~v\n"
+               (fx-name evt)
+               vtime)]
     ))
 
 ;; given a job-ctxt and an event, queue the event
@@ -129,7 +120,7 @@
   (define score (uscore->score ((Live_Loop-block (Event-uevent evt)))
                                (Event-vtime evt)
                                (Event-outbus evt)))
-  
+  #;(printf "Playing live loop score ending at time ~v\n" (first score))
   (queue-events job-ctxt
                 (second score))
   (let ([new_evt (thread-try-receive)])
@@ -169,13 +160,7 @@
               (fx-name f)
               time
               (fx-params f))
-  (queue-block job-ctxt (fx-block f)))
-
-;; queue a block from fx with a new out_bus
-(define (queue-block job-ctxt block)
-  (map (λ (s) (queue-event job-ctxt s))
-              (stream->list block)))
-
+ (queue-events job-ctxt (fx-block f)))
 
 ;; given a job-ctxt and a list of events, queue them all.
 (define (queue-events job-ctxt score)
@@ -331,30 +316,16 @@
                                                                    (current-inexact-milliseconds)))))))
           
           (listen-for-messages job-ctxt)))))
-;; listens for messages by polling because it also wants to check and see if any threads
-;; are still running. If no threads are running, there is no live_loop, so it's a one-time
-;; run and we should stop
-#;(define (listen-for-messages job-ctxt)
-  (let ([evt (thread-try-receive)])
-    (cond
-      ;; if all threads are dead, we have no live loops, thus nothing to update
-      [(all-threads-dead?) (end-job job-ctxt)]
-      ;; didn't get a message. keep going
-      [(not evt) (listen-for-messages job-ctxt)]
-      ;; stop button pressed
-      [(equal? evt 'stop) (begin
-                            (kill-all-threads)
-                            (end-job job-ctxt))]
-      ;; got a user score
-      [else (begin
-              (save-thread
-               "lsonic-main-thread"
-               (thread
-                (λ ()
-                  (queue-events
-                   job-ctxt
-                   (second (uscore->score (l-eval evt)
-                                          (current-inexact-milliseconds))))))))])))
+
+;; let's provide a function to evaluate
+;; the definitions-text the button gets.
+;; borrowed from
+;;  http://stackoverflow.com/questions/10399315/how-to-eval-strings-in-racket
+;; is there a better way to pass new code?
+(define-namespace-anchor anc)
+(define ns (namespace-anchor->namespace anc))
+(define (l-eval text)
+  (eval (read (open-input-string text)) ns))
 
 ;; a pisleep is a number representing time in ms to sleep
 (struct pisleep (duration) #:prefab)
@@ -449,6 +420,16 @@
    (list (Event 2000 (synth "beep" 60) 0 12)
          (Event 6000 (synth "beep" 66) 0 12)
          (Event 6000 (synth "beep" 69) 0 12)))
+
+  ;; chord test
+  (check-equal?
+   (stream->list
+    (second (uscore->score (list (chord "beep" "e1" "minor")
+                                 (psleep 1))
+                           2000)))
+   (list (Event 2000 (synth "beep" 16) 0 12)
+         (Event 2000 (synth "beep" 19) 0 12)
+         (Event 2000 (synth "beep" 23) 0 12)))
     
   ;; simple loop test
   (check-equal?
@@ -521,7 +502,7 @@
          ;(Event 3000 (void) 0 12)
          (Event 3000 (synth "tb303" 50) 0 12)
          (Event 3000 (synth "blade" 50) 0 12)))
-
+ 
   ;; small system test
   (define ctxt (startup))
   (define job-ctxt (start-job ctxt))
@@ -535,11 +516,11 @@
                                          (psleep 8))))))))
   (sleep 4) 
   (thread-send t1 "(list (live_loop \"test1\"
-                              (block (sample \"loop_garzul\")
-                                         (synth \"beep\" 60
-                                                \"release\" 8)
-                                         (psleep 8))))")
-  (sleep 20)
+                              (block (sample \"loop_garzul\" \"amp\" 0.25)
+                                     (fx \"echo\"
+                                         (block (synth \"beep\" \"e1\" \"release\" 4)
+                                                (psleep 8))))))")
+  (sleep 30)
   (thread-send t1 'stop)
   )
 
